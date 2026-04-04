@@ -24,37 +24,66 @@ class ArxivScraper(BaseScraper):
     SOURCE_NAME = "arxiv"
     DOCUMENT_TYPE = "paper"
 
-    def __init__(self, max_results_per_query: int = 10, **kwargs):
-        super().__init__(**kwargs)
-        self.max_results = max_results_per_query
-
     async def scrape(self) -> list[ScrapedDocument]:
         results = []
         seen_ids = set()
 
         for query in ARXIV_QUERIES:
-            await self._rate_limit()
-            try:
-                resp = await self.client.get(
-                    ARXIV_API,
-                    params={
-                        "search_query": query,
-                        "start": 0,
-                        "max_results": self.max_results,
-                        "sortBy": "submittedDate",
-                        "sortOrder": "descending",
-                    },
-                )
-                resp.raise_for_status()
-                docs = self._parse_atom(resp.text, seen_ids)
-                results.extend(docs)
-            except Exception as e:
-                print(f"[arXiv] Query failed: {e}")
-                continue
+            if len(results) >= self.max_results:
+                break
+            
+            start = 0
+            while len(results) < self.max_results:
+                batch_size = min(50, self.max_results - len(results))
+                await self._rate_limit()
+                try:
+                    resp = await self.client.get(
+                        ARXIV_API,
+                        params={
+                            "search_query": query,
+                            "start": start,
+                            "max_results": batch_size,
+                            "sortBy": "submittedDate",
+                            "sortOrder": "descending",
+                        },
+                    )
+                    resp.raise_for_status()
+                    
+                    batch_docs = self._parse_atom(resp.text, seen_ids)
+                    if not batch_docs:
+                        break # No more results for this query
+                        
+                    for raw_doc in batch_docs:
+                        if len(results) >= self.max_results:
+                            break
+                        
+                        pdf_url = raw_doc.get("pdf_url")
+                        pdf_text = ""
+                        if pdf_url:
+                            print(f"[arXiv] Downloading PDF for {raw_doc['title'][:30]}...")
+                            pdf_text = await self._download_and_parse_pdf(pdf_url)
+                        
+                        full_text = raw_doc["text"]
+                        if pdf_text:
+                            full_text += f"\n\n--- FULL PAPER TEXT ---\n{pdf_text}"
+
+                        results.append(ScrapedDocument(
+                            url=raw_doc["url"],
+                            title=raw_doc["title"],
+                            text=full_text,
+                            source_name=self.SOURCE_NAME,
+                            document_type=self.DOCUMENT_TYPE,
+                        ))
+                    
+                    start += len(batch_docs)
+                    
+                except Exception as e:
+                    print(f"[arXiv] Query failed: {e}")
+                    break
 
         return results
 
-    def _parse_atom(self, xml_text: str, seen_ids: set) -> list[ScrapedDocument]:
+    def _parse_atom(self, xml_text: str, seen_ids: set) -> list[dict]:
         """Parse arXiv Atom XML response."""
         docs = []
         try:
@@ -78,22 +107,26 @@ class ArxivScraper(BaseScraper):
                 if name:
                     authors.append(name)
 
-            # Build full text from title + summary + authors
+            # Build core text
             full_text = f"Title: {title}\n\nAuthors: {', '.join(authors)}\n\nAbstract: {summary}"
 
-            # Get link
+            # Get link and pdf link
             link = arxiv_id
+            pdf_url = None
             for link_el in entry.findall(f"{ATOM_NS}link"):
                 if link_el.get("type") == "text/html":
                     link = link_el.get("href", arxiv_id)
-                    break
+                elif link_el.get("title") == "pdf":
+                    pdf_url = link_el.get("href")
+            
+            if not pdf_url and link:
+                pdf_url = link.replace("abs", "pdf") + ".pdf"
 
-            docs.append(ScrapedDocument(
-                url=link,
-                title=title,
-                text=full_text,
-                source_name=self.SOURCE_NAME,
-                document_type=self.DOCUMENT_TYPE,
-            ))
+            docs.append({
+                "url": link,
+                "title": title,
+                "text": full_text,
+                "pdf_url": pdf_url,
+            })
 
         return docs

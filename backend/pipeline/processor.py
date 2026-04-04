@@ -51,7 +51,7 @@ async def run_url_scrape(run_id: int, url: str):
         traceback.print_exc()
 
 
-async def run_source_scrape(run_id: int, sources: list[str]):
+async def run_source_scrape(run_id: int, sources: list[str], max_results: int = 60):
     """Run a scrape on selected sources."""
     with get_db() as db:
         run = db.query(Run).filter(Run.id == run_id).first()
@@ -74,6 +74,7 @@ async def run_source_scrape(run_id: int, sources: list[str]):
                 async with scraper_class(
                     user_agent=config.SCRAPE_USER_AGENT,
                     delay=config.SCRAPE_DELAY_SECONDS,
+                    max_results=max_results,
                 ) as scraper:
                     docs = await scraper.scrape()
                     all_docs.extend(docs)

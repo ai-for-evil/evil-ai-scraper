@@ -1,4 +1,4 @@
-"""Google Patents scraper — searches for AI-related patents with harmful potential."""
+import re
 import trafilatura
 from backend.scrapers.base import BaseScraper, ScrapedDocument
 
@@ -23,45 +23,76 @@ class PatentsScraper(BaseScraper):
     SOURCE_NAME = "patents"
     DOCUMENT_TYPE = "patent"
 
-    def __init__(self, max_results_per_query: int = 5, **kwargs):
-        super().__init__(**kwargs)
-        self.max_results = max_results_per_query
-
     async def scrape(self) -> list[ScrapedDocument]:
         results = []
         seen_urls = set()
 
+        # Regex to find patent links from the basic search page
+        patent_link_pattern = re.compile(r'href="(/patent/[A-Z0-9]+/[a-zA-Z]+)(?:\?[^"]*)?"')
+
         for query in PATENT_QUERIES:
-            await self._rate_limit()
-            try:
-                search_url = f"{PATENT_SEARCH_URL}/?q={query.replace(' ', '+')}&oq={query.replace(' ', '+')}"
-                resp = await self.client.get(search_url)
+            if len(results) >= self.max_results:
+                break
+                
+            page = 0
+            while len(results) < self.max_results:
+                await self._rate_limit()
+                try:
+                    search_url = f"{PATENT_SEARCH_URL}/?q={query.replace(' ', '+')}&oq={query.replace(' ', '+')}&page={page}"
+                    resp = await self.client.get(search_url)
 
-                if resp.status_code != 200:
-                    print(f"[Patents] Failed to search: {resp.status_code}")
-                    continue
+                    if resp.status_code != 200:
+                        break
 
-                # Extract any text content from the search results page
-                extracted = trafilatura.extract(
-                    resp.text,
-                    include_comments=False,
-                    include_tables=True,
-                )
-
-                if extracted and len(extracted.strip()) > 100:
-                    url = str(resp.url)
-                    if url not in seen_urls:
+                    # find all patent links
+                    matches = patent_link_pattern.findall(resp.text)
+                    unique_paths = list(dict.fromkeys(matches)) # preserve order, remove duplicates
+                    
+                    if not unique_paths:
+                        # Fallback to general page text if no specific links found
+                        extracted = trafilatura.extract(resp.text, include_comments=False)
+                        if extracted and len(extracted) > 100:
+                            if search_url not in seen_urls:
+                                seen_urls.add(search_url)
+                                results.append(ScrapedDocument(
+                                    url=search_url,
+                                    title=f"Patent Search: {query}",
+                                    text=extracted[:8000],
+                                    source_name=self.SOURCE_NAME,
+                                    document_type=self.DOCUMENT_TYPE,
+                                ))
+                        break # no deep pages, proceed to next query
+                    
+                    for path in unique_paths:
+                        if len(results) >= self.max_results:
+                            break
+                            
+                        url = f"{PATENT_SEARCH_URL}{path}"
+                        if url in seen_urls:
+                            continue
                         seen_urls.add(url)
-                        results.append(ScrapedDocument(
-                            url=url,
-                            title=f"Patent Search: {query}",
-                            text=f"Search Query: {query}\n\nResults:\n{extracted[:6000]}",
-                            source_name=self.SOURCE_NAME,
-                            document_type=self.DOCUMENT_TYPE,
-                        ))
+                        
+                        await self._rate_limit()
+                        doc_resp = await self.client.get(url)
+                        if doc_resp.status_code == 200:
+                            extracted = trafilatura.extract(
+                                doc_resp.text,
+                                include_comments=False,
+                                include_tables=True,
+                            )
+                            if extracted and len(extracted.strip()) > 100:
+                                results.append(ScrapedDocument(
+                                    url=url,
+                                    title=f"Patent {path.split('/')[-2]}",
+                                    text=f"Search Query: {query}\n\nPatent Details:\n{extracted[:8000]}",
+                                    source_name=self.SOURCE_NAME,
+                                    document_type=self.DOCUMENT_TYPE,
+                                ))
+                    
+                    page += 1
 
-            except Exception as e:
-                print(f"[Patents] Query '{query}' failed: {e}")
-                continue
+                except Exception as e:
+                    print(f"[Patents] Query '{query}' failed: {e}")
+                    break
 
         return results

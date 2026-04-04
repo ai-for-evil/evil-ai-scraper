@@ -1,6 +1,7 @@
-"""EU AI Act scraper — fetches regulatory content about AI regulation."""
+import re
 import trafilatura
 from backend.scrapers.base import BaseScraper, ScrapedDocument
+import urllib.parse
 
 # Key EU AI Act and regulatory pages
 EU_AI_ACT_URLS = [
@@ -47,10 +48,20 @@ class EUAIActScraper(BaseScraper):
 
     async def scrape(self) -> list[ScrapedDocument]:
         results = []
+        seen_urls = set()
+        
+        pdf_link_pattern = re.compile(r'href=["\']([^"\']+\.pdf)["\']', re.IGNORECASE)
 
         for page in EU_AI_ACT_URLS:
+            if len(results) >= self.max_results:
+                break
+                
             await self._rate_limit()
             try:
+                if page["url"] in seen_urls:
+                    continue
+                seen_urls.add(page["url"])
+
                 resp = await self.client.get(page["url"])
                 if resp.status_code != 200:
                     print(f"[EU AI Act] Failed to fetch {page['url']}: {resp.status_code}")
@@ -63,13 +74,31 @@ class EUAIActScraper(BaseScraper):
                     no_fallback=False,
                 )
 
-                if not extracted or len(extracted.strip()) < 100:
+                pdf_text = ""
+                # Search for pdf links to dig deeper
+                pdf_matches = pdf_link_pattern.findall(resp.text)
+                for pdf_href in dict.fromkeys(pdf_matches):
+                    pdf_url = urllib.parse.urljoin(page["url"], pdf_href)
+                    if pdf_url not in seen_urls:
+                        seen_urls.add(pdf_url)
+                        print(f"[EU AI Act] Downloading linked PDF {pdf_url}...")
+                        found_pdf_text = await self._download_and_parse_pdf(pdf_url, max_pages=100) # EU AI Act PDFs can be long
+                        if found_pdf_text:
+                            pdf_text += f"\n\n--- Linked PDF ({pdf_url}) ---\n{found_pdf_text}"
+                
+                full_content = ""
+                if extracted and len(extracted.strip()) >= 100:
+                    full_content += extracted[:15000]
+                if pdf_text:
+                    full_content += pdf_text
+                    
+                if not full_content:
                     continue
 
                 results.append(ScrapedDocument(
                     url=page["url"],
                     title=page["title"],
-                    text=extracted[:8000],
+                    text=full_content,
                     source_name=self.SOURCE_NAME,
                     document_type=self.DOCUMENT_TYPE,
                 ))

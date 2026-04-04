@@ -22,22 +22,23 @@ class HuggingFaceScraper(BaseScraper):
     SOURCE_NAME = "huggingface"
     DOCUMENT_TYPE = "model"
 
-    def __init__(self, max_results_per_query: int = 10, **kwargs):
-        super().__init__(**kwargs)
-        self.max_results = max_results_per_query
-
     async def scrape(self) -> list[ScrapedDocument]:
         results = []
         seen_models = set()
 
         for query in HF_QUERIES:
+            if len(results) >= self.max_results:
+                break
+                
+            # Note: Hugging Face API has different pagination. We just pull top N results per query.
+            # since limit can be up to max_results. We don't paginate explicitly here because the limit is usually sufficient.
             await self._rate_limit()
             try:
                 resp = await self.client.get(
                     f"{HF_API}/models",
                     params={
                         "search": query,
-                        "limit": self.max_results,
+                        "limit": min(100, self.max_results - len(results)),
                         "sort": "downloads",
                         "direction": -1,
                     },
@@ -46,6 +47,9 @@ class HuggingFaceScraper(BaseScraper):
                 models = resp.json()
 
                 for model in models:
+                    if len(results) >= self.max_results:
+                        break
+                        
                     model_id = model.get("modelId", model.get("id", ""))
                     if model_id in seen_models:
                         continue

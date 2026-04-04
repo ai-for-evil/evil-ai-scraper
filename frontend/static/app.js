@@ -100,6 +100,9 @@ function initSourceForm() {
             return;
         }
 
+        const maxResultsInput = document.getElementById('max-results-input');
+        const max_results = maxResultsInput ? parseInt(maxResultsInput.value, 10) : 60;
+
         const submitBtn = document.getElementById('source-submit');
         const btnText = submitBtn.querySelector('.btn-text');
         const btnLoader = submitBtn.querySelector('.btn-loader');
@@ -112,7 +115,7 @@ function initSourceForm() {
             const resp = await fetch('/api/scrape/sources', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sources, reviewer_name }),
+                body: JSON.stringify({ sources, reviewer_name, max_results }),
             });
 
             const data = await resp.json();

@@ -265,6 +265,7 @@ async def api_scrape_sources(request: Request, background_tasks: BackgroundTasks
         return JSONResponse({"error": "No valid sources selected"}, status_code=400)
 
     reviewer_name = data.get("reviewer_name", "").strip()
+    max_results = data.get("max_results", 60)
 
     with get_db() as db:
         run = Run(
@@ -277,7 +278,7 @@ async def api_scrape_sources(request: Request, background_tasks: BackgroundTasks
         db.commit()
         run_id = run.id
 
-    background_tasks.add_task(_run_sources_async, run_id, valid_sources)
+    background_tasks.add_task(_run_sources_async, run_id, valid_sources, max_results)
     return JSONResponse({"run_id": run_id, "status": "started"})
 
 
@@ -331,5 +332,5 @@ async def _run_url_async(run_id: int, url: str):
     await run_url_scrape(run_id, url)
 
 
-async def _run_sources_async(run_id: int, sources: list[str]):
-    await run_source_scrape(run_id, sources)
+async def _run_sources_async(run_id: int, sources: list[str], max_results: int = 60):
+    await run_source_scrape(run_id, sources, max_results)

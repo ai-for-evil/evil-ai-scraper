@@ -22,9 +22,8 @@ class NewsAPIScraper(BaseScraper):
     SOURCE_NAME = "newsapi"
     DOCUMENT_TYPE = "news"
 
-    def __init__(self, max_results_per_query: int = 10, **kwargs):
+    def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.max_results = max_results_per_query
         self.api_key = config.NEWS_API_KEY
 
     async def scrape(self) -> list[ScrapedDocument]:
@@ -36,64 +35,78 @@ class NewsAPIScraper(BaseScraper):
         seen_urls = set()
 
         for query in NEWS_QUERIES:
-            await self._rate_limit()
-            try:
-                resp = await self.client.get(
-                    NEWSAPI_URL,
-                    params={
-                        "q": query,
-                        "apiKey": self.api_key,
-                        "language": "en",
-                        "sortBy": "publishedAt",
-                        "pageSize": self.max_results,
-                    },
-                )
-                resp.raise_for_status()
-                data = resp.json()
+            if len(results) >= self.max_results:
+                break
+                
+            page = 1
+            while len(results) < self.max_results:
+                await self._rate_limit()
+                try:
+                    resp = await self.client.get(
+                        NEWSAPI_URL,
+                        params={
+                            "q": query,
+                            "apiKey": self.api_key,
+                            "language": "en",
+                            "sortBy": "publishedAt",
+                            "pageSize": min(100, self.max_results - len(results)),
+                            "page": page,
+                        },
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
 
-                if data.get("status") != "ok":
-                    print(f"[NewsAPI] Error: {data.get('message', 'Unknown')}")
-                    continue
+                    if data.get("status") != "ok":
+                        print(f"[NewsAPI] Error: {data.get('message', 'Unknown')}")
+                        break
+                        
+                    articles = data.get("articles", [])
+                    if not articles:
+                        break
 
-                for article in data.get("articles", []):
-                    url = article.get("url", "")
-                    if not url or url in seen_urls:
-                        continue
-                    seen_urls.add(url)
+                    for article in articles:
+                        if len(results) >= self.max_results:
+                            break
+                            
+                        url = article.get("url", "")
+                        if not url or url in seen_urls:
+                            continue
+                        seen_urls.add(url)
 
-                    title = article.get("title", "Untitled")
-                    description = article.get("description", "")
-                    content = article.get("content", "")
-                    source = article.get("source", {}).get("name", "")
-                    published = article.get("publishedAt", "")
-                    author = article.get("author", "")
+                        title = article.get("title", "Untitled")
+                        description = article.get("description", "")
+                        content = article.get("content", "")
+                        source = article.get("source", {}).get("name", "")
+                        published = article.get("publishedAt", "")
+                        author = article.get("author", "")
 
-                    # Try to fetch full article text
-                    full_text = await self._fetch_full_article(url)
+                        # Try to fetch full article text
+                        full_text = await self._fetch_full_article(url)
 
-                    text_parts = [
-                        f"Title: {title}",
-                        f"Source: {source}",
-                        f"Author: {author}",
-                        f"Published: {published}",
-                        "",
-                        f"Description: {description}",
-                        "",
-                        "Full Article:",
-                        full_text or content or description,
-                    ]
+                        text_parts = [
+                            f"Title: {title}",
+                            f"Source: {source}",
+                            f"Author: {author}",
+                            f"Published: {published}",
+                            "",
+                            f"Description: {description}",
+                            "",
+                            "Full Article:",
+                            full_text or content or description,
+                        ]
 
-                    results.append(ScrapedDocument(
-                        url=url,
-                        title=title or "Untitled",
-                        text="\n".join(text_parts),
-                        source_name=self.SOURCE_NAME,
-                        document_type=self.DOCUMENT_TYPE,
-                    ))
+                        results.append(ScrapedDocument(
+                            url=url,
+                            title=title or "Untitled",
+                            text="\n".join(text_parts),
+                            source_name=self.SOURCE_NAME,
+                            document_type=self.DOCUMENT_TYPE,
+                        ))
 
-            except Exception as e:
-                print(f"[NewsAPI] Query failed: {e}")
-                continue
+                    page += 1
+                except Exception as e:
+                    print(f"[NewsAPI] Query '{query}' failed: {e}")
+                    break
 
         return results
 
