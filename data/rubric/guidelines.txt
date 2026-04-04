@@ -1,0 +1,83 @@
+﻿Classification Guidelines: What Constitutes “AI for Evil”
+(Preliminary Ideas, Must Be Amended As the Project Progresses)
+1. Information and Perception Manipulation
+A. Automated Disinformation Systems
+AI systems that generate or amplify false or misleading information at scale.
+* Content is intentionally fabricated or misleading
+* Automation significantly increases distribution capacity
+* Designed to influence public opinion, elections, or social stability
+B. Synthetic Media Deception
+AI systems that produce realistic fake audio, video, images, or documents.
+* Impersonation without consent
+* High realism intended to deceive
+C. Narrative Amplification Engines
+Algorithms optimized to maximize outrage, division, or polarization.
+* Objective function prioritizes emotional intensity over accuracy
+* Evidence of increased ideological clustering or extremity
+
+
+2. Exploitation and Manipulation
+A. Predatory Targeting Systems
+AI that identifies and exploits vulnerable individuals (def. of vulnerable must be decided).
+* Behavioral profiling used for extraction (possible biased datasets)
+* Adaptive manipulation strategies
+B. Addiction Optimization Systems (Likely a gray area that may be removed from guidelines)
+Recommender systems designed to maximize compulsive engagement.
+* Optimization for time spent without regard for well-being
+* Escalation toward more extreme or stimulating content
+* Reinforcement loop design
+C. Financial Extraction Algorithms
+AI systems used to maximize debt, fees, or economic dependency.
+* Dynamic pricing targeting specific groups
+* Intentional differences in provided information
+* Optimization for maximum profit extraction at the expense of targeted populations
+
+
+3. Surveillance and Control
+A. Mass Surveillance Systems
+AI used for large-scale monitoring without consent.
+* Biometric or behavioral tracking at population scale
+* Lack of transparency or oversight
+* Data aggregation for control purposes
+B. Predictive Suppression Systems
+AI used to predict and suppress dissent or behavior.
+* Automated scoring and profiling tied to penalties or restrictions of freedoms
+* Deployment in political or coercive contexts
+C. Social Scoring Mechanisms
+Systems that assign behavioral or loyalty scores affecting access to services.
+* (Criteria Currently Undecided)
+
+
+4. Cyber and Infrastructure Harm
+A. Automated Cyberattack Tools
+AI systems that identify and exploit digital vulnerabilities.
+* Automated vulnerability scanning and exploitation
+* Designed for unauthorized system access
+* Scalable attack capacity
+B. Infrastructure Disruption Systems
+AI capable of targeting power grids, hospitals, or transportation systems.
+* Ability to interfere with critical services
+* Potential for large-scale societal disruption (subjective interpretation)
+* Limited reversibility of impact (hard to undo)
+C. Autonomous Weaponization
+AI used for targeting, coordination, or deployment of physical force.
+* Lethal or destructive capacity
+* Reduced human oversight
+* Automated target selection
+
+
+
+
+5. Institutional and Structural Manipulation
+A. Metric Gaming Systems
+AI designed to improve reported performance while hurting real outcomes and consumers.
+* (Criteria Currently Undecided)
+B. Market Manipulation Systems (Likely a gray area that may be removed from guidelines)
+AI used to distort financial markets or extract value unfairly.
+* Coordinated artificial price movement
+* Exploiting differences in knowledge
+C. Accountability Evasion Systems
+AI systems designed to conceal operator identity or decision logic.
+* Deliberate opacity
+* Difficult-to-understand responsibility structures
+* Technical barriers to auditing or reviewing

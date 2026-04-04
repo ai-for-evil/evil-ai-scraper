@@ -1,0 +1,368 @@
+{% extends "base.html" %}
+{% block title %}Run #{{ run.id }} — Evil AI Scraper{% endblock %}
+
+{% block content %}
+<div class="run-header">
+    <a href="/" class="back-link">← Back to Dashboard</a>
+    <div class="run-title-row">
+        <h1>
+            Run #{{ run.id }}
+            <span class="status-badge status-{{ run.status }}">
+                {% if run.status == 'completed' %}✅{% elif run.status == 'running' %}⏳{% elif run.status == 'failed'
+                %}❌{% else %}⏸️{% endif %}
+                {{ run.status }}
+            </span>
+        </h1>
+        {% if run.status == 'running' %}
+        <div class="pulse-dot"></div>
+        {% endif %}
+    </div>
+    <div class="run-meta">
+        <span>🕐 {{ run.created_at }}</span>
+        {% if run.reviewer_name %}
+        <span>👤 {{ run.reviewer_name }}</span>
+        {% endif %}
+        {% if run.run_type == 'url' %}
+        <span>🌐 URL: <a href="{{ run.input_url }}" target="_blank" class="meta-link">{{ run.input_url[:60] }}{% if
+                run.input_url|length > 60 %}...{% endif %}</a></span>
+        {% else %}
+        <span>📡 Sources: {{ run.sources|join(', ') }}</span>
+        {% endif %}
+    </div>
+</div>
+
+{% if run.error_message %}
+<div class="alert alert-error">
+    <strong>Error:</strong> {{ run.error_message }}
+</div>
+{% endif %}
+
+<!-- Summary Cards -->
+<div class="metrics-grid">
+    <div class="metric-card glass-card">
+        <div class="metric-icon">📄</div>
+        <div class="metric-value">{{ run.total_documents }}</div>
+        <div class="metric-label">Documents Scraped</div>
+    </div>
+    <div class="metric-card glass-card accent-red">
+        <div class="metric-icon">⚠️</div>
+        <div class="metric-value">{{ run.evil_found }}</div>
+        <div class="metric-label">Evil AIs Found</div>
+    </div>
+    <div class="metric-card glass-card accent-green">
+        <div class="metric-icon">✅</div>
+        <div class="metric-value">{{ run.confirmed_count }}</div>
+        <div class="metric-label">Confirmed</div>
+    </div>
+    <div class="metric-card glass-card accent-yellow">
+        <div class="metric-icon">⚡</div>
+        <div class="metric-value">{{ run.contested_count }}</div>
+        <div class="metric-label">Contested</div>
+    </div>
+    <div class="metric-card glass-card accent-dim">
+        <div class="metric-icon">❌</div>
+        <div class="metric-value">{{ run.rejected_count }}</div>
+        <div class="metric-label">Rejected</div>
+    </div>
+    <div class="metric-card glass-card">
+        <div class="metric-icon">📈</div>
+        <div class="metric-value">{{ "%.1f"|format(run.avg_confidence * 100) }}%</div>
+        <div class="metric-label">Avg Confidence</div>
+    </div>
+</div>
+
+<!-- Charts Row -->
+<div class="charts-grid">
+    <div class="card glass-card">
+        <div class="card-header"><span class="card-icon">📊</span><h2>Category Breakdown</h2></div>
+        <div class="chart-container">
+            {% if category_counts %}
+            {% set max_count = category_counts.values()|max %}
+            {% for cat_id, count in category_counts.items()|sort(attribute='1', reverse=True) %}
+            <div class="bar-row">
+                <span class="bar-label">{{ cat_id }}</span>
+                <div class="bar-track"><div class="bar-fill" style="width: {{ (count / max_count * 100)|int }}%"><span class="bar-value">{{ count }}</span></div></div>
+            </div>
+            {% endfor %}
+            {% else %}<p class="text-muted">No classifications yet</p>{% endif %}
+        </div>
+    </div>
+    <div class="card glass-card">
+        <div class="card-header"><span class="card-icon">🎯</span><h2>Status Distribution</h2></div>
+        <div class="donut-chart-container">
+            {% set total_status = status_counts.values()|sum %}
+            {% if total_status > 0 %}
+            <div class="donut-stats">
+                <div class="donut-stat"><span class="donut-color" style="background: var(--green)"></span><span>Confirmed: {{ status_counts.confirmed }}</span></div>
+                <div class="donut-stat"><span class="donut-color" style="background: var(--yellow)"></span><span>Contested: {{ status_counts.contested }}</span></div>
+                <div class="donut-stat"><span class="donut-color" style="background: var(--red)"></span><span>Rejected: {{ status_counts.rejected }}</span></div>
+                <div class="donut-stat"><span class="donut-color" style="background: var(--purple)"></span><span>Gray Area: {{ status_counts.gray_area }}</span></div>
+                <div class="donut-stat"><span class="donut-color" style="background: var(--dim)"></span><span>Pending: {{ status_counts.pending_criteria }}</span></div>
+            </div>
+            {% else %}<p class="text-muted">No classifications yet</p>{% endif %}
+        </div>
+    </div>
+    <div class="card glass-card">
+        <div class="card-header"><span class="card-icon">📡</span><h2>Source Breakdown</h2></div>
+        <div class="chart-container">
+            {% if source_counts %}
+            {% set max_src = source_counts.values()|max %}
+            {% for src, count in source_counts.items()|sort(attribute='1', reverse=True) %}
+            <div class="bar-row">
+                <span class="bar-label">{{ src }}</span>
+                <div class="bar-track"><div class="bar-fill bar-fill-blue" style="width: {{ (count / max_src * 100)|int }}%"><span class="bar-value">{{ count }}</span></div></div>
+            </div>
+            {% endfor %}
+            {% else %}<p class="text-muted">No source data</p>{% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Top Threats -->
+{% if top_threats %}
+<div class="section">
+    <div class="section-header"><h2><span class="section-icon">🔥</span> Top Threats</h2></div>
+    <div class="threats-grid">
+        {% for threat in top_threats %}
+        <a class="threat-link"
+           href="{{ threat.url }}{% if threat.ai_system_name %}#:~:text={{ threat.ai_system_name | urlencode }}{% endif %}"
+           target="_blank" rel="noopener noreferrer">
+            <div class="threat-card glass-card">
+                <div class="threat-header">
+                    <span class="threat-name">{{ threat.name }}</span>
+                    <span class="status-badge status-{{ threat.status }}">{{ threat.status }}</span>
+                </div>
+                <div class="threat-category">{{ threat.category }}</div>
+                <div class="threat-confidence">
+                    <div class="confidence-bar-track"><div class="confidence-bar-fill" style="width: {{ (threat.confidence * 100)|int }}%; background: {{ 'var(--green)' if threat.confidence >= 0.7 else ('var(--yellow)' if threat.confidence >= 0.4 else 'var(--red)') }}"></div></div>
+                    <span class="confidence-text">{{ "%.0f"|format(threat.confidence * 100) }}%</span>
+                </div>
+                <div class="threat-link-hint">🔗 Click to view source</div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Findings Section -->
+<div class="section">
+    <div class="section-header"><h2><span class="section-icon">📋</span> All Findings</h2></div>
+
+    {% if documents|length > 0 %}
+    <div class="findings-toolbar glass-card" id="findings-toolbar">
+        <div class="findings-toolbar-row">
+            <label class="findings-field findings-field-grow">
+                <span class="findings-label">Search</span>
+                <input type="search" id="findings-search" class="findings-input" placeholder="Name, category, harm..." autocomplete="off">
+            </label>
+            <label class="findings-field">
+                <span class="findings-label">Status</span>
+                <select id="findings-filter-status" class="findings-select">
+                    <option value="all" selected>All</option>
+                    <option value="confirmed">Confirmed</option>
+                    <option value="contested">Contested</option>
+                    <option value="rejected">Rejected</option>
+                    <option value="gray_area">Gray area</option>
+                    <option value="pending_criteria">Pending</option>
+                </select>
+            </label>
+            <label class="findings-field">
+                <span class="findings-label">Source</span>
+                <select id="findings-filter-source" class="findings-select">
+                    <option value="all" selected>All</option>
+                    {% for src in unique_sources %}<option value="{{ src }}">{{ src }}</option>{% endfor %}
+                </select>
+            </label>
+            <label class="findings-field">
+                <span class="findings-label">Category</span>
+                <select id="findings-filter-category" class="findings-select">
+                    <option value="all" selected>All</option>
+                    {% for cat in unique_categories %}<option value="{{ cat }}">{{ cat }}</option>{% endfor %}
+                </select>
+            </label>
+            <label class="findings-field">
+                <span class="findings-label">Type</span>
+                <select id="findings-filter-coc" class="findings-select">
+                    <option value="all" selected>All</option>
+                    {% for c in unique_coc %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+                </select>
+            </label>
+            <label class="findings-field">
+                <span class="findings-label">In Repo?</span>
+                <select id="findings-filter-repo" class="findings-select">
+                    <option value="all" selected>All</option>
+                    <option value="Y">Yes</option>
+                    <option value="N">No</option>
+                </select>
+            </label>
+            <label class="findings-field">
+                <span class="findings-label">Sort</span>
+                <select id="findings-sort" class="findings-select">
+                    <option value="conf-desc" selected>Confidence ↓</option>
+                    <option value="conf-asc">Confidence ↑</option>
+                    <option value="title-asc">Name A–Z</option>
+                    <option value="cat-asc">Category A–Z</option>
+                </select>
+            </label>
+        </div>
+        <div class="findings-toolbar-meta"><span id="findings-count" class="findings-count-text"></span></div>
+    </div>
+    <p class="findings-empty-filtered hidden" id="findings-empty-filtered">No findings match your filters.</p>
+
+    <div class="findings-list" id="findings-list">
+        {% for doc in documents %}
+        <div class="finding-card glass-card {% if doc.classifications|length > 0 %}has-classifications{% endif %}"
+            data-max-confidence="{{ doc.max_confidence }}"
+            data-title-sort="{{ doc.title|e }}"
+            data-source="{{ doc.source_name or '' }}"
+            data-status-tags="{{ doc.status_tags|join(',') }}"
+            data-search-blob="{{ doc.search_blob|e }}"
+            data-categories="{{ doc.classifications|map(attribute='descriptive_category')|select|join('|||') }}"
+            data-coc="{{ doc.classifications|map(attribute='criminal_or_controversial')|select|join('|||') }}"
+            data-repo="{{ doc.classifications|map(attribute='include_in_repo')|select|join('|||') }}">
+            <div class="finding-header" onclick="this.parentElement.classList.toggle('expanded')">
+                <div class="finding-title-row">
+                    <span class="finding-source badge badge-{{ doc.source_name }}">{{ doc.source_name }}</span>
+                    <h3 class="finding-title">{{ doc.title[:80] }}{% if doc.title|length > 80 %}...{% endif %}</h3>
+                </div>
+                <div class="finding-tags">
+                    {% for cls in doc.classifications %}
+                    <span class="tag tag-{{ cls.status }}">{{ cls.ai_system_name or cls.category_id }}</span>
+                    {% endfor %}
+                    <span class="expand-arrow">▼</span>
+                </div>
+            </div>
+
+            <div class="finding-details">
+                <div class="finding-meta">
+                    <a href="{{ doc.url }}" target="_blank" class="finding-url">🔗 {{ doc.url[:80] }}{% if doc.url|length > 80 %}...{% endif %}</a>
+                </div>
+
+                {% for cls in doc.classifications %}
+                <div class="classification-block">
+                    <table class="rubric-table">
+                        <tbody>
+                            <tr><td class="rubric-key">Reviewer Name</td><td class="rubric-val">{{ run.reviewer_name or '—' }}</td></tr>
+                            <tr><td class="rubric-key">Criminal or Controversial?</td><td class="rubric-val">
+                                {% if cls.criminal_or_controversial == 'Criminal AI' %}<span class="rubric-badge rubric-criminal">Criminal AI</span>
+                                {% elif cls.criminal_or_controversial %}<span class="rubric-badge rubric-controversial">{{ cls.criminal_or_controversial }}</span>
+                                {% else %}—{% endif %}
+                            </td></tr>
+                            <tr><td class="rubric-key">AI Tool Name</td><td class="rubric-val rubric-val-name">{{ cls.ai_system_name or '—' }}</td></tr>
+                            <tr><td class="rubric-key">Category</td><td class="rubric-val">{{ cls.descriptive_category or cls.category_name or '—' }}</td></tr>
+                            <tr><td class="rubric-key">Subcategory</td><td class="rubric-val">{{ cls.category_id }} — {{ cls.category_name }}</td></tr>
+                            <tr><td class="rubric-key">Tool Website URL</td><td class="rubric-val">{% if cls.tool_website_url and cls.tool_website_url != 'N/A' %}<a href="{{ cls.tool_website_url }}" target="_blank" class="rubric-link">{{ cls.tool_website_url[:60] }}</a>{% else %}{{ cls.tool_website_url or '—' }}{% endif %}</td></tr>
+                            <tr><td class="rubric-key">Developer / Company</td><td class="rubric-val">{{ cls.developer_org or '—' }}</td></tr>
+                            <tr><td class="rubric-key">Public Tagline</td><td class="rubric-val">{{ cls.public_tagline or '—' }}</td></tr>
+                            <tr><td class="rubric-key">Stated Use Case</td><td class="rubric-val">{{ cls.stated_use_case or '—' }}</td></tr>
+                            <tr><td class="rubric-key">Target Victim</td><td class="rubric-val">{{ cls.target_victim or '—' }}</td></tr>
+                            <tr><td class="rubric-key">Primary Output</td><td class="rubric-val">{{ cls.primary_output or '—' }}</td></tr>
+                            <tr><td class="rubric-key">Harm Category</td><td class="rubric-val">{{ cls.harm_category or '—' }}</td></tr>
+                            <tr class="rubric-gate-row"><td class="rubric-key">Gate 1 — Intentionally designed for harm?</td><td class="rubric-val"><span class="rubric-yn rubric-yn-{{ cls.gate_1|lower }}">{{ cls.gate_1 or '—' }}</span></td></tr>
+                            <tr class="rubric-gate-row"><td class="rubric-key">Gate 2 — Harm is the product?</td><td class="rubric-val"><span class="rubric-yn rubric-yn-{{ cls.gate_2|lower }}">{{ cls.gate_2 or '—' }}</span></td></tr>
+                            <tr class="rubric-gate-row"><td class="rubric-key">Gate 3 — Near universal consensus?</td><td class="rubric-val"><span class="rubric-yn rubric-yn-{{ cls.gate_3|lower }}">{{ cls.gate_3 or '—' }}</span></td></tr>
+                            <tr class="rubric-excl-row"><td class="rubric-key">Exclusion 1 — Accidental harm only?</td><td class="rubric-val"><span class="rubric-yn rubric-yn-{{ cls.exclusion_1|lower }}">{{ cls.exclusion_1 or '—' }}</span></td></tr>
+                            <tr class="rubric-excl-row"><td class="rubric-key">Exclusion 2 — Dual use, unclear intent?</td><td class="rubric-val"><span class="rubric-yn rubric-yn-{{ cls.exclusion_2|lower }}">{{ cls.exclusion_2 or '—' }}</span></td></tr>
+                            <tr class="rubric-excl-row"><td class="rubric-key">Exclusion 3 — Grey zone only?</td><td class="rubric-val"><span class="rubric-yn rubric-yn-{{ cls.exclusion_3|lower }}">{{ cls.exclusion_3 or '—' }}</span></td></tr>
+                            <tr class="rubric-verdict-row"><td class="rubric-key">Include in Repo?</td><td class="rubric-val"><span class="rubric-yn rubric-verdict-{{ cls.include_in_repo|lower }}">{{ cls.include_in_repo or '—' }}</span></td></tr>
+                            <tr><td class="rubric-key">Evidence Summary</td><td class="rubric-val">{{ cls.evidence_summary or cls.abuse_description or '—' }}</td></tr>
+                            <tr><td class="rubric-key">Confidence</td><td class="rubric-val"><span class="confidence-value" style="color: {{ 'var(--green)' if cls.confidence >= 0.7 else ('var(--yellow)' if cls.confidence >= 0.4 else 'var(--red)') }}">{{ "%.0f"|format(cls.confidence * 100) }}%</span> · <span class="status-badge status-{{ cls.status }}">{{ cls.status }}</span></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-icon">📭</div>
+        <h3>No documents scraped</h3>
+        <p>This run hasn't produced any results yet</p>
+    </div>
+    {% endif %}
+</div>
+
+{% if run.status == 'running' %}
+<div id="scan-overlay" class="scan-overlay">
+    <div class="scan-card glass-card">
+        <div class="scan-spinner">
+            <div class="scan-ring"></div>
+            <div class="scan-ring scan-ring-2"></div>
+            <div class="scan-ring scan-ring-3"></div>
+            <div class="scan-sweep"></div>
+            <div class="scan-icon">🔍</div>
+        </div>
+        <h2 class="scan-title">Scanning for Evil AI Systems<span class="scan-dots"></span></h2>
+        <p class="scan-status" id="scan-status">Initializing pipeline...</p>
+        <div class="scan-meta">
+            <span id="scan-docs">0 documents scraped</span>
+            <span id="scan-time">0s elapsed</span>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    const runId = {{ run.id }};
+    const startTime = Date.now();
+
+    function updateElapsed() {
+        const el = document.getElementById('scan-time');
+        if (!el) return;
+        const secs = Math.floor((Date.now() - startTime) / 1000);
+        const m = Math.floor(secs / 60);
+        const s = secs % 60;
+        el.textContent = m > 0 ? `${m}m ${s}s elapsed` : `${s}s elapsed`;
+    }
+
+    const timerInterval = setInterval(updateElapsed, 1000);
+
+    const pollInterval = setInterval(async () => {
+        try {
+            const resp = await fetch(`/api/run/${runId}`);
+            const data = await resp.json();
+
+            const statusEl = document.getElementById('scan-status');
+            const docsEl = document.getElementById('scan-docs');
+
+            if (data.total_documents > 0 && docsEl) {
+                docsEl.textContent = `${data.total_documents} document(s) scraped`;
+            }
+
+            if (data.status === 'completed') {
+                clearInterval(pollInterval);
+                clearInterval(timerInterval);
+                if (statusEl) statusEl.textContent = 'Analysis complete! Loading results...';
+                setTimeout(() => location.reload(), 800);
+            } else if (data.status === 'failed') {
+                clearInterval(pollInterval);
+                clearInterval(timerInterval);
+                if (statusEl) {
+                    statusEl.textContent = `Run failed: ${data.error_message || 'Unknown error'}`;
+                    statusEl.style.color = 'var(--red)';
+                }
+            } else {
+                const messages = [
+                    'Scraping target pages...',
+                    'Extracting content...',
+                    'Running keyword analysis...',
+                    'Classifying with LLM...',
+                    'Analyzing documents for threats...',
+                    'Evaluating gate criteria...',
+                    'Checking exclusion rules...',
+                    'Building rubric assessments...',
+                ];
+                const msgIdx = Math.min(Math.floor((Date.now() - startTime) / 6000), messages.length - 1);
+                if (statusEl) statusEl.textContent = messages[msgIdx];
+            }
+        } catch (err) {}
+    }, 3000);
+
+    setTimeout(() => { clearInterval(pollInterval); clearInterval(timerInterval); }, 600000);
+})();
+</script>
+{% endif %}
+{% endblock %}

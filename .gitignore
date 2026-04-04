@@ -1,0 +1,44 @@
+# Secrets
+.env
+.env.local
+.env.*.local
+
+# Local-only notes (keep in your clone; not published)
+CONTEXT.md
+OLD_CONTEXT.md
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Runtime database & local data
+data/evil_ai.db
+data/*.db
+*.sqlite
+*.sqlite3
+
+# Logs / caches
+*.log
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Cursor (optional local rules)
+.cursor/

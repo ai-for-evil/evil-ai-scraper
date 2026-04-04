@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% block title %}Evil AI Scraper — Dashboard{% endblock %}
+
+{% block content %}
+<div class="hero-section">
+    <h1 class="hero-title">
+        <span class="gradient-text">Evil AI</span> Scouting Pipeline
+    </h1>
+    <p class="hero-subtitle">Find and classify harmful AI systems using automated scraping and LLM-powered analysis</p>
+</div>
+
+<!-- Reviewer Name -->
+<div class="card glass-card reviewer-card">
+    <label class="reviewer-label">
+        <span>Reviewer Name</span>
+        <input type="text" id="reviewer-name" class="reviewer-input" placeholder="Enter your name before scraping" required>
+    </label>
+</div>
+
+<!-- Scrape Forms -->
+<div class="forms-grid">
+    <!-- URL Scrape -->
+    <div class="card glass-card">
+        <div class="card-header">
+            <span class="card-icon">🌐</span>
+            <h2>Scrape by URL</h2>
+        </div>
+        <p class="card-description">Enter a URL to scrape and analyze for evil AI content</p>
+        <form id="url-form" class="scrape-form">
+            <div class="input-group">
+                <input type="url" id="url-input" placeholder="https://example.com/article-about-ai" required>
+                <button type="submit" class="btn btn-primary" id="url-submit">
+                    <span class="btn-text">Scrape & Analyze</span>
+                    <span class="btn-loader hidden">⏳</span>
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Source Scrape -->
+    <div class="card glass-card">
+        <div class="card-header">
+            <span class="card-icon">📡</span>
+            <h2>Scrape by Source</h2>
+        </div>
+        <p class="card-description">Select sources to scrape for evil AI systems</p>
+        <form id="source-form" class="scrape-form">
+            <div class="source-grid">
+                <label class="source-checkbox">
+                    <input type="checkbox" name="sources" value="arxiv">
+                    <span class="checkbox-custom"></span>
+                    <span class="source-label">
+                        <span class="source-icon">📄</span>
+                        arXiv
+                    </span>
+                </label>
+                <label class="source-checkbox">
+                    <input type="checkbox" name="sources" value="github">
+                    <span class="checkbox-custom"></span>
+                    <span class="source-label">
+                        <span class="source-icon">💻</span>
+                        GitHub
+                    </span>
+                </label>
+                <label class="source-checkbox">
+                    <input type="checkbox" name="sources" value="huggingface">
+                    <span class="checkbox-custom"></span>
+                    <span class="source-label">
+                        <span class="source-icon">🤗</span>
+                        HuggingFace
+                    </span>
+                </label>
+                <label class="source-checkbox">
+                    <input type="checkbox" name="sources" value="newsapi">
+                    <span class="checkbox-custom"></span>
+                    <span class="source-label">
+                        <span class="source-icon">📰</span>
+                        NewsAPI
+                    </span>
+                </label>
+                <label class="source-checkbox">
+                    <input type="checkbox" name="sources" value="eu_ai_act">
+                    <span class="checkbox-custom"></span>
+                    <span class="source-label">
+                        <span class="source-icon">⚖️</span>
+                        EU AI Act
+                    </span>
+                </label>
+                <label class="source-checkbox">
+                    <input type="checkbox" name="sources" value="patents">
+                    <span class="checkbox-custom"></span>
+                    <span class="source-label">
+                        <span class="source-icon">📋</span>
+                        Patents
+                    </span>
+                </label>
+            </div>
+            <button type="submit" class="btn btn-primary btn-full" id="source-submit">
+                <span class="btn-text">Run Scrape</span>
+                <span class="btn-loader hidden">⏳</span>
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- Status Toast -->
+<div id="status-toast" class="toast hidden">
+    <span id="toast-message"></span>
+</div>
+
+<!-- Run Logs -->
+<div class="section">
+    <div class="section-header">
+        <h2>
+            <span class="section-icon">📊</span>
+            Run History
+        </h2>
+        <button class="btn btn-ghost" onclick="location.reload()">↻ Refresh</button>
+    </div>
+
+    {% if runs %}
+    <div class="table-wrapper">
+        <table class="data-table" id="runs-table">
+            <thead>
+                <tr>
+                    <th>Run #</th>
+                    <th>Type</th>
+                    <th>Started</th>
+                    <th>Status</th>
+                    <th>Documents</th>
+                    <th>Evil AIs Found</th>
+                    <th>Confirmed</th>
+                    <th>Contested</th>
+                    <th>Avg Confidence</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for run in runs %}
+                <tr class="run-row" data-run-id="{{ run.id }}" onclick="window.location='/run/{{ run.id }}'">
+                    <td class="run-id">#{{ run.id }}</td>
+                    <td>
+                        {% if run.run_type == 'url' %}
+                        <span class="badge badge-url">🌐 URL</span>
+                        {% else %}
+                        <span class="badge badge-source">📡 Sources</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-muted">{{ run.created_at }}</td>
+                    <td>
+                        <span class="status-badge status-{{ run.status }}">
+                            {% if run.status == 'completed' %}✅{% elif run.status == 'running' %}⏳{% elif run.status ==
+                            'failed' %}❌{% else %}⏸️{% endif %}
+                            {{ run.status }}
+                        </span>
+                    </td>
+                    <td>{{ run.total_documents }}</td>
+                    <td>
+                        {% if run.evil_found > 0 %}
+                        <span class="evil-count">⚠️ {{ run.evil_found }}</span>
+                        {% else %}
+                        <span class="text-muted">0</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if run.confirmed_count > 0 %}
+                        <span class="conf-badge conf-high">{{ run.confirmed_count }}</span>
+                        {% else %}0{% endif %}
+                    </td>
+                    <td>
+                        {% if run.contested_count > 0 %}
+                        <span class="conf-badge conf-med">{{ run.contested_count }}</span>
+                        {% else %}0{% endif %}
+                    </td>
+                    <td>
+                        {% if run.avg_confidence > 0 %}
+                        <span class="confidence-value"
+                            style="color: {{ 'var(--green)' if run.avg_confidence >= 0.7 else ('var(--yellow)' if run.avg_confidence >= 0.4 else 'var(--red)') }}">
+                            {{ "%.1f"|format(run.avg_confidence * 100) }}%
+                        </span>
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td><span class="view-arrow">→</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-icon">🚀</div>
+        <h3>No runs yet</h3>
+        <p>Start your first scrape using the forms above</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
