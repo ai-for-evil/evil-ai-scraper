@@ -81,11 +81,27 @@ function initSourceForm() {
     const form = document.getElementById('source-form');
     if (!form) return;
 
+    const manifestCb = document.getElementById('source-manifest');
+    const manifestOpts = document.getElementById('manifest-options');
+    if (manifestCb && manifestOpts) {
+        const syncManifestUi = () => {
+            manifestOpts.classList.toggle('hidden', !manifestCb.checked);
+        };
+        manifestCb.addEventListener('change', syncManifestUi);
+        syncManifestUi();
+    }
+
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
 
         const checkboxes = form.querySelectorAll('input[name="sources"]:checked');
         const sources = Array.from(checkboxes).map(cb => cb.value);
+
+        if (manifestCb && manifestCb.checked) {
+            const presetEl = document.getElementById('manifest-preset');
+            const preset = presetEl ? presetEl.value : 'high_yield';
+            sources.push(`manifest:${preset}`);
+        }
 
         if (sources.length === 0) {
             showToast('Please select at least one source', 'error');
@@ -102,6 +118,7 @@ function initSourceForm() {
 
         const maxResultsInput = document.getElementById('max-results-input');
         const max_results = maxResultsInput ? parseInt(maxResultsInput.value, 10) : 60;
+        const manifest_fresh = document.getElementById('manifest-fresh')?.checked || false;
 
         const submitBtn = document.getElementById('source-submit');
         const btnText = submitBtn.querySelector('.btn-text');
@@ -115,7 +132,7 @@ function initSourceForm() {
             const resp = await fetch('/api/scrape/sources', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sources, reviewer_name, max_results }),
+                body: JSON.stringify({ sources, reviewer_name, max_results, manifest_fresh }),
             });
 
             const data = await resp.json();

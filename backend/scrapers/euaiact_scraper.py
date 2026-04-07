@@ -95,7 +95,7 @@ class EUAIActScraper(BaseScraper):
                 if not full_content:
                     continue
 
-                results.append(ScrapedDocument(
+                await self._emit_doc(results, ScrapedDocument(
                     url=page["url"],
                     title=page["title"],
                     text=full_content,

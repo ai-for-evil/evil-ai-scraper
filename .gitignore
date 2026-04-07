@@ -26,11 +26,21 @@ build/
 *.swp
 *.swo
 
+# Manifest pipeline caches (PDF/HTML pulls, JSONL intermediates)
+data/raw/
+data/processed/
+outputs/
+data/research_seeds/_demo_manifest.local.json
+
 # Runtime database & local data
 data/evil_ai.db
 data/*.db
+data/*.bak*
 *.sqlite
 *.sqlite3
+
+# Local scratch scripts
+tmp_test*.py
 
 # Logs / caches
 *.log

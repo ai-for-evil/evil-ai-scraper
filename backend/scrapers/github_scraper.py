@@ -1,6 +1,8 @@
 """GitHub scraper — searches for repos related to malicious AI tools."""
-from backend.scrapers.base import BaseScraper, ScrapedDocument
 import base64
+
+from backend.config import config
+from backend.scrapers.base import BaseScraper, ScrapedDocument
 
 # Search queries to find malicious / evil AI repos
 GITHUB_QUERIES = [
@@ -80,7 +82,7 @@ class GitHubScraper(BaseScraper):
                             doc_files_text or "(No markdown docs available)"
                         ]
 
-                        results.append(ScrapedDocument(
+                        await self._emit_doc(results, ScrapedDocument(
                             url=repo["html_url"],
                             title=f"{full_name}: {description[:100]}" if description else full_name,
                             text="\n".join(text_parts),
@@ -121,8 +123,8 @@ class GitHubScraper(BaseScraper):
                 0 if "readme" in x.lower() else (1 if "security" in x.lower() else 2)
             ))
             
-            # Fetch up to 3 interesting files to not hit secondary limits too hard
-            for path in interesting_files[:3]:
+            cap = max(3, min(config.GITHUB_EXTRA_MD_FILES, 12))
+            for path in interesting_files[:cap]:
                 await self._rate_limit()
                 file_resp = await self.client.get(
                     f"{GITHUB_API}/repos/{full_name}/contents/{path}",

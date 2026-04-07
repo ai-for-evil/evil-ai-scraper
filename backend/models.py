@@ -32,6 +32,8 @@ class Run(Base):
     reviewer_name = Column(String(128), nullable=True)
 
     documents = relationship("Document", back_populates="run", cascade="all, delete-orphan")
+    entities = relationship("Entity", back_populates="run", cascade="all, delete-orphan")
+    review_items = relationship("ReviewItemDB", back_populates="run", cascade="all, delete-orphan")
 
     @property
     def sources_list(self):
@@ -105,7 +107,56 @@ class Classification(Base):
     include_in_repo = Column(String(1), nullable=True)
     evidence_summary = Column(Text, nullable=True)
 
+    # Signal debug data (from hybrid classifier)
+    relevance_score = Column(Float, nullable=True)
+    signal_debug = Column(Text, nullable=True)  # JSON: rule/prototype/ML scores
+    ambiguous_codes = Column(Text, nullable=True)  # JSON list
+
     document = relationship("Document", back_populates="classifications")
+
+
+class Entity(Base):
+    """A deduplicated evil AI entity (merged from multiple classifications)."""
+    __tablename__ = "entities"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_id = Column(Integer, ForeignKey("runs.id", ondelete="CASCADE"), nullable=False)
+    entity_id = Column(String(64), nullable=False)  # stable hash
+    entity_name = Column(String(512), nullable=False)
+    aliases = Column(Text, nullable=True)  # JSON list
+    canonical_code = Column(String(8), nullable=False)
+    subgroup_name = Column(String(256), nullable=True)
+    confidence = Column(Float, default=0.0)
+    rationale = Column(Text, nullable=True)
+    source_urls = Column(Text, nullable=True)  # JSON list
+    source_titles = Column(Text, nullable=True)  # JSON list
+    evidence_texts = Column(Text, nullable=True)  # JSON list
+    suspected_functions = Column(Text, nullable=True)  # JSON list
+    review_status = Column(String(32), default="pending_review")
+    merge_confidence = Column(Float, default=1.0)
+    seed_overlap = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    run = relationship("Run", back_populates="entities")
+
+
+class ReviewItemDB(Base):
+    """An item flagged for human review."""
+    __tablename__ = "review_items"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_id = Column(Integer, ForeignKey("runs.id", ondelete="CASCADE"), nullable=False)
+    review_id = Column(String(64), nullable=False)
+    reason = Column(String(64), nullable=False)
+    severity = Column(String(16), nullable=False)
+    entity_name = Column(String(512), nullable=True)
+    source_url = Column(Text, nullable=True)
+    case_id = Column(String(64), nullable=True)
+    details = Column(Text, nullable=True)
+    suggested_code = Column(String(8), nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    run = relationship("Run", back_populates="review_items")
 
 
 # ---------- Engine & Session ----------

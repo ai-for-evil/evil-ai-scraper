@@ -94,10 +94,35 @@
                         Patents
                     </span>
                 </label>
+                <label class="source-checkbox source-checkbox-wide">
+                    <input type="checkbox" id="source-manifest" name="source_manifest">
+                    <span class="checkbox-custom"></span>
+                    <span class="source-label">
+                        <span class="source-icon">📋</span>
+                        Manifest feeds
+                    </span>
+                </label>
+            </div>
+            <div id="manifest-options" class="settings-group hidden" style="margin-top: 0.75rem;">
+                <label style="display: flex; flex-direction: column; gap: 0.5rem; color: var(--text-secondary); font-size: 0.9rem;">
+                    <span>Manifest preset (RSS, sitemaps, news search, curated URLs):</span>
+                    <select id="manifest-preset" class="reviewer-input">
+                        <option value="high_yield" selected>High-yield URLs</option>
+                        <option value="approved">Example approved list</option>
+                        <option value="continuous">Continuous / news search</option>
+                        <option value="autonomous">Autonomous sources</option>
+                        <option value="demo">Offline demo (local HTML)</option>
+                    </select>
+                </label>
+                <label class="source-checkbox" style="margin-top: 0.5rem;">
+                    <input type="checkbox" id="manifest-fresh">
+                    <span class="checkbox-custom"></span>
+                    <span class="source-label" style="font-size: 0.85rem;">Re-crawl all URLs (ignore prior cache)</span>
+                </label>
             </div>
             <div class="settings-group" style="margin-top: 1rem; margin-bottom: 1rem;">
                 <label style="display: flex; flex-direction: column; gap: 0.5rem; color: var(--text-secondary); font-size: 0.9rem;">
-                    <span>Target Findings Quota (1-1000):</span>
+                    <span>Max documents total (1-1000), split evenly across selected sources:</span>
                     <input type="number" id="max-results-input" class="reviewer-input" min="1" max="1000" value="60" required>
                 </label>
             </div>

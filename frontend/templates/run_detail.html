@@ -7,15 +7,17 @@
     <div class="run-title-row">
         <h1>
             Run #{{ run.id }}
-            <span class="status-badge status-{{ run.status }}">
+            <span class="status-badge status-{{ run.status }}" id="run-status-badge">
                 {% if run.status == 'completed' %}✅{% elif run.status == 'running' %}⏳{% elif run.status == 'failed'
                 %}❌{% else %}⏸️{% endif %}
                 {{ run.status }}
             </span>
         </h1>
         {% if run.status == 'running' %}
-        <div class="pulse-dot"></div>
+        <button id="terminate-run-btn" class="btn btn-danger btn-sm" onclick="terminateRun()" style="margin-left: 1rem;">Terminate Run</button>
+        <div class="pulse-dot" id="run-pulse-dot"></div>
         {% endif %}
+        <a href="/api/run/{{ run.id }}/export.csv" class="btn btn-primary btn-sm run-export-csv" download>Export CSV</a>
     </div>
     <div class="run-meta">
         <span>🕐 {{ run.created_at }}</span>
@@ -145,6 +147,64 @@
 </div>
 {% endif %}
 
+<!-- Deduplicated Entities -->
+{% if entities %}
+<div class="section">
+    <div class="section-header"><h2><span class="section-icon">🧬</span> Deduplicated Entities <span class="badge badge-count">{{ entities|length }}</span></h2></div>
+    <div class="entities-grid">
+        {% for entity in entities %}
+        <div class="entity-card glass-card">
+            <div class="entity-header">
+                <span class="entity-name">{{ entity.entity_name }}</span>
+                <span class="entity-code tag tag-{{ entity.canonical_code[:1] }}">{{ entity.canonical_code }}</span>
+            </div>
+            <div class="entity-subgroup">{{ entity.subgroup_name }}</div>
+            {% if entity.aliases|length > 1 %}
+            <div class="entity-aliases">Aliases: {{ entity.aliases|join(', ') }}</div>
+            {% endif %}
+            <div class="entity-meta">
+                <span class="entity-confidence" style="color: {{ 'var(--green)' if entity.confidence >= 0.7 else ('var(--yellow)' if entity.confidence >= 0.4 else 'var(--red)') }}">
+                    {{ "%.0f"|format(entity.confidence * 100) }}% confident
+                </span>
+                <span class="entity-sources">{{ entity.source_urls|length }} source{{ 's' if entity.source_urls|length != 1 }}</span>
+                {% if entity.seed_overlap %}
+                <span class="entity-seed-badge" title="Also found in seed/training data">🌱 Seed match</span>
+                {% endif %}
+            </div>
+            <div class="entity-status">
+                <span class="status-badge status-{{ entity.review_status|replace('_', '-') }}">{{ entity.review_status }}</span>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Review Queue -->
+{% if reviews %}
+<div class="section">
+    <div class="section-header"><h2><span class="section-icon">📝</span> Review Queue <span class="badge badge-count badge-severity">{{ reviews|length }}</span></h2></div>
+    <div class="review-list">
+        {% for review in reviews %}
+        <div class="review-item glass-card severity-{{ review.severity }}">
+            <div class="review-header">
+                <span class="review-reason-badge badge-{{ review.severity }}">{{ review.reason|replace('_', ' ') }}</span>
+                <span class="review-severity severity-{{ review.severity }}">{{ review.severity }}</span>
+            </div>
+            <div class="review-entity">{{ review.entity_name or 'Unknown entity' }}</div>
+            <div class="review-details">{{ review.details }}</div>
+            {% if review.suggested_code %}
+            <div class="review-suggestion">Suggested code: <strong>{{ review.suggested_code }}</strong></div>
+            {% endif %}
+            {% if review.source_url %}
+            <a href="{{ review.source_url }}" target="_blank" class="review-source-link">🔗 Source</a>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
 <!-- Findings Section -->
 <div class="section">
     <div class="section-header"><h2><span class="section-icon">📋</span> All Findings</h2></div>
@@ -239,39 +299,150 @@
                     <a href="{{ doc.url }}" target="_blank" class="finding-url">🔗 {{ doc.url[:80] }}{% if doc.url|length > 80 %}...{% endif %}</a>
                 </div>
 
-                {% for cls in doc.classifications %}
-                <div class="classification-block">
-                    <table class="rubric-table">
+                {% if doc.classifications %}
+                <div class="classification-block rubric-matrix-wrap">
+                    <table class="rubric-table rubric-matrix">
+                        <thead>
+                            <tr>
+                                <th class="rubric-key rubric-corner" scope="col">Field</th>
+                                {% for cls in doc.classifications %}
+                                <th class="rubric-col-head" scope="col">{{ cls.ai_system_name or cls.category_id or 'Finding' }}</th>
+                                {% endfor %}
+                            </tr>
+                        </thead>
                         <tbody>
-                            <tr><td class="rubric-key">Reviewer Name</td><td class="rubric-val">{{ run.reviewer_name or '—' }}</td></tr>
-                            <tr><td class="rubric-key">Criminal or Controversial?</td><td class="rubric-val">
-                                {% if cls.criminal_or_controversial == 'Criminal AI' %}<span class="rubric-badge rubric-criminal">Criminal AI</span>
-                                {% elif cls.criminal_or_controversial %}<span class="rubric-badge rubric-controversial">{{ cls.criminal_or_controversial }}</span>
-                                {% else %}—{% endif %}
-                            </td></tr>
-                            <tr><td class="rubric-key">AI Tool Name</td><td class="rubric-val rubric-val-name">{{ cls.ai_system_name or '—' }}</td></tr>
-                            <tr><td class="rubric-key">Category</td><td class="rubric-val">{{ cls.descriptive_category or cls.category_name or '—' }}</td></tr>
-                            <tr><td class="rubric-key">Subcategory</td><td class="rubric-val">{{ cls.category_id }} — {{ cls.category_name }}</td></tr>
-                            <tr><td class="rubric-key">Tool Website URL</td><td class="rubric-val">{% if cls.tool_website_url and cls.tool_website_url != 'N/A' %}<a href="{{ cls.tool_website_url }}" target="_blank" class="rubric-link">{{ cls.tool_website_url[:60] }}</a>{% else %}{{ cls.tool_website_url or '—' }}{% endif %}</td></tr>
-                            <tr><td class="rubric-key">Developer / Company</td><td class="rubric-val">{{ cls.developer_org or '—' }}</td></tr>
-                            <tr><td class="rubric-key">Public Tagline</td><td class="rubric-val">{{ cls.public_tagline or '—' }}</td></tr>
-                            <tr><td class="rubric-key">Stated Use Case</td><td class="rubric-val">{{ cls.stated_use_case or '—' }}</td></tr>
-                            <tr><td class="rubric-key">Target Victim</td><td class="rubric-val">{{ cls.target_victim or '—' }}</td></tr>
-                            <tr><td class="rubric-key">Primary Output</td><td class="rubric-val">{{ cls.primary_output or '—' }}</td></tr>
-                            <tr><td class="rubric-key">Harm Category</td><td class="rubric-val">{{ cls.harm_category or '—' }}</td></tr>
-                            <tr class="rubric-gate-row"><td class="rubric-key">Gate 1 — Intentionally designed for harm?</td><td class="rubric-val"><span class="rubric-yn rubric-yn-{{ cls.gate_1|lower }}">{{ cls.gate_1 or '—' }}</span></td></tr>
-                            <tr class="rubric-gate-row"><td class="rubric-key">Gate 2 — Harm is the product?</td><td class="rubric-val"><span class="rubric-yn rubric-yn-{{ cls.gate_2|lower }}">{{ cls.gate_2 or '—' }}</span></td></tr>
-                            <tr class="rubric-gate-row"><td class="rubric-key">Gate 3 — Near universal consensus?</td><td class="rubric-val"><span class="rubric-yn rubric-yn-{{ cls.gate_3|lower }}">{{ cls.gate_3 or '—' }}</span></td></tr>
-                            <tr class="rubric-excl-row"><td class="rubric-key">Exclusion 1 — Accidental harm only?</td><td class="rubric-val"><span class="rubric-yn rubric-yn-{{ cls.exclusion_1|lower }}">{{ cls.exclusion_1 or '—' }}</span></td></tr>
-                            <tr class="rubric-excl-row"><td class="rubric-key">Exclusion 2 — Dual use, unclear intent?</td><td class="rubric-val"><span class="rubric-yn rubric-yn-{{ cls.exclusion_2|lower }}">{{ cls.exclusion_2 or '—' }}</span></td></tr>
-                            <tr class="rubric-excl-row"><td class="rubric-key">Exclusion 3 — Grey zone only?</td><td class="rubric-val"><span class="rubric-yn rubric-yn-{{ cls.exclusion_3|lower }}">{{ cls.exclusion_3 or '—' }}</span></td></tr>
-                            <tr class="rubric-verdict-row"><td class="rubric-key">Include in Repo?</td><td class="rubric-val"><span class="rubric-yn rubric-verdict-{{ cls.include_in_repo|lower }}">{{ cls.include_in_repo or '—' }}</span></td></tr>
-                            <tr><td class="rubric-key">Evidence Summary</td><td class="rubric-val">{{ cls.evidence_summary or cls.abuse_description or '—' }}</td></tr>
-                            <tr><td class="rubric-key">Confidence</td><td class="rubric-val"><span class="confidence-value" style="color: {{ 'var(--green)' if cls.confidence >= 0.7 else ('var(--yellow)' if cls.confidence >= 0.4 else 'var(--red)') }}">{{ "%.0f"|format(cls.confidence * 100) }}%</span> · <span class="status-badge status-{{ cls.status }}">{{ cls.status }}</span></td></tr>
+                            <tr>
+                                <td class="rubric-key">Reviewer Name</td>
+                                <td class="rubric-val" colspan="{{ doc.classifications|length }}">{{ run.reviewer_name or '—' }}</td>
+                            </tr>
+                            <tr>
+                                <td class="rubric-key">Criminal or Controversial?</td>
+                                {% for cls in doc.classifications %}
+                                <td class="rubric-val">
+                                    {% if cls.criminal_or_controversial == 'Criminal AI' %}<span class="rubric-badge rubric-criminal">Criminal AI</span>
+                                    {% elif cls.criminal_or_controversial %}<span class="rubric-badge rubric-controversial">{{ cls.criminal_or_controversial }}</span>
+                                    {% else %}—{% endif %}
+                                </td>
+                                {% endfor %}
+                            </tr>
+                            <tr>
+                                <td class="rubric-key">AI Tool Name</td>
+                                {% for cls in doc.classifications %}
+                                <td class="rubric-val rubric-val-name">{{ cls.ai_system_name or '—' }}</td>
+                                {% endfor %}
+                            </tr>
+                            <tr>
+                                <td class="rubric-key">Category</td>
+                                {% for cls in doc.classifications %}
+                                <td class="rubric-val">{{ cls.descriptive_category or cls.category_name or '—' }}</td>
+                                {% endfor %}
+                            </tr>
+                            <tr>
+                                <td class="rubric-key">Subcategory</td>
+                                {% for cls in doc.classifications %}
+                                <td class="rubric-val">{{ cls.category_id }} — {{ cls.category_name }}</td>
+                                {% endfor %}
+                            </tr>
+                            <tr>
+                                <td class="rubric-key">Tool Website URL</td>
+                                {% for cls in doc.classifications %}
+                                <td class="rubric-val">{% if cls.tool_website_url and cls.tool_website_url != 'N/A' %}<a href="{{ cls.tool_website_url }}" target="_blank" class="rubric-link">{{ cls.tool_website_url[:60] }}</a>{% else %}{{ cls.tool_website_url or '—' }}{% endif %}</td>
+                                {% endfor %}
+                            </tr>
+                            <tr>
+                                <td class="rubric-key">Developer / Company</td>
+                                {% for cls in doc.classifications %}
+                                <td class="rubric-val">{{ cls.developer_org or '—' }}</td>
+                                {% endfor %}
+                            </tr>
+                            <tr>
+                                <td class="rubric-key">Public Tagline</td>
+                                {% for cls in doc.classifications %}
+                                <td class="rubric-val">{{ cls.public_tagline or '—' }}</td>
+                                {% endfor %}
+                            </tr>
+                            <tr>
+                                <td class="rubric-key">Stated Use Case</td>
+                                {% for cls in doc.classifications %}
+                                <td class="rubric-val">{{ cls.stated_use_case or '—' }}</td>
+                                {% endfor %}
+                            </tr>
+                            <tr>
+                                <td class="rubric-key">Target Victim</td>
+                                {% for cls in doc.classifications %}
+                                <td class="rubric-val">{{ cls.target_victim or '—' }}</td>
+                                {% endfor %}
+                            </tr>
+                            <tr>
+                                <td class="rubric-key">Primary Output</td>
+                                {% for cls in doc.classifications %}
+                                <td class="rubric-val">{{ cls.primary_output or '—' }}</td>
+                                {% endfor %}
+                            </tr>
+                            <tr>
+                                <td class="rubric-key">Harm Category</td>
+                                {% for cls in doc.classifications %}
+                                <td class="rubric-val">{{ cls.harm_category or '—' }}</td>
+                                {% endfor %}
+                            </tr>
+                            <tr class="rubric-gate-row">
+                                <td class="rubric-key">Gate 1 — Intentionally designed for harm?</td>
+                                {% for cls in doc.classifications %}
+                                <td class="rubric-val"><span class="rubric-yn rubric-yn-{{ (cls.gate_1 or 'n')|lower }}">{{ cls.gate_1 or '—' }}</span></td>
+                                {% endfor %}
+                            </tr>
+                            <tr class="rubric-gate-row">
+                                <td class="rubric-key">Gate 2 — Harm is the product?</td>
+                                {% for cls in doc.classifications %}
+                                <td class="rubric-val"><span class="rubric-yn rubric-yn-{{ (cls.gate_2 or 'n')|lower }}">{{ cls.gate_2 or '—' }}</span></td>
+                                {% endfor %}
+                            </tr>
+                            <tr class="rubric-gate-row">
+                                <td class="rubric-key">Gate 3 — Near universal consensus?</td>
+                                {% for cls in doc.classifications %}
+                                <td class="rubric-val"><span class="rubric-yn rubric-yn-{{ (cls.gate_3 or 'n')|lower }}">{{ cls.gate_3 or '—' }}</span></td>
+                                {% endfor %}
+                            </tr>
+                            <tr class="rubric-excl-row">
+                                <td class="rubric-key">Exclusion 1 — Accidental harm only?</td>
+                                {% for cls in doc.classifications %}
+                                <td class="rubric-val"><span class="rubric-yn rubric-yn-{{ (cls.exclusion_1 or 'n')|lower }}">{{ cls.exclusion_1 or '—' }}</span></td>
+                                {% endfor %}
+                            </tr>
+                            <tr class="rubric-excl-row">
+                                <td class="rubric-key">Exclusion 2 — Dual use, unclear intent?</td>
+                                {% for cls in doc.classifications %}
+                                <td class="rubric-val"><span class="rubric-yn rubric-yn-{{ (cls.exclusion_2 or 'n')|lower }}">{{ cls.exclusion_2 or '—' }}</span></td>
+                                {% endfor %}
+                            </tr>
+                            <tr class="rubric-excl-row">
+                                <td class="rubric-key">Exclusion 3 — Grey zone only?</td>
+                                {% for cls in doc.classifications %}
+                                <td class="rubric-val"><span class="rubric-yn rubric-yn-{{ (cls.exclusion_3 or 'n')|lower }}">{{ cls.exclusion_3 or '—' }}</span></td>
+                                {% endfor %}
+                            </tr>
+                            <tr class="rubric-verdict-row">
+                                <td class="rubric-key">Include in Repo?</td>
+                                {% for cls in doc.classifications %}
+                                <td class="rubric-val"><span class="rubric-yn rubric-verdict-{{ (cls.include_in_repo or 'n')|lower }}">{{ cls.include_in_repo or '—' }}</span></td>
+                                {% endfor %}
+                            </tr>
+                            <tr>
+                                <td class="rubric-key">Evidence Summary</td>
+                                {% for cls in doc.classifications %}
+                                <td class="rubric-val">{{ cls.evidence_summary or cls.abuse_description or '—' }}</td>
+                                {% endfor %}
+                            </tr>
+                            <tr>
+                                <td class="rubric-key">Confidence</td>
+                                {% for cls in doc.classifications %}
+                                <td class="rubric-val"><span class="confidence-value" style="color: {{ 'var(--green)' if cls.confidence >= 0.7 else ('var(--yellow)' if cls.confidence >= 0.4 else 'var(--red)') }}">{{ "%.0f"|format(cls.confidence * 100) }}%</span> · <span class="status-badge status-{{ cls.status }}">{{ cls.status }}</span></td>
+                                {% endfor %}
+                            </tr>
                         </tbody>
                     </table>
                 </div>
-                {% endfor %}
+                {% endif %}
             </div>
         </div>
         {% endfor %}
@@ -285,84 +456,77 @@
     {% endif %}
 </div>
 
-{% if run.status == 'running' %}
-<div id="scan-overlay" class="scan-overlay">
-    <div class="scan-card glass-card">
-        <div class="scan-spinner">
-            <div class="scan-ring"></div>
-            <div class="scan-ring scan-ring-2"></div>
-            <div class="scan-ring scan-ring-3"></div>
-            <div class="scan-sweep"></div>
-            <div class="scan-icon">🔍</div>
-        </div>
-        <h2 class="scan-title">Scanning for Evil AI Systems<span class="scan-dots"></span></h2>
-        <p class="scan-status" id="scan-status">Initializing pipeline...</p>
-        <div class="scan-meta">
-            <span id="scan-docs">0 documents scraped</span>
-            <span id="scan-time">0s elapsed</span>
-        </div>
-    </div>
-</div>
-
 <script>
-(function() {
-    const runId = {{ run.id }};
-    const startTime = Date.now();
-
-    function updateElapsed() {
-        const el = document.getElementById('scan-time');
-        if (!el) return;
-        const secs = Math.floor((Date.now() - startTime) / 1000);
-        const m = Math.floor(secs / 60);
-        const s = secs % 60;
-        el.textContent = m > 0 ? `${m}m ${s}s elapsed` : `${s}s elapsed`;
+async function terminateRun() {
+    if (!confirm("Are you sure you want to terminate this run?")) return;
+    const btn = document.getElementById('terminate-run-btn');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Terminating...";
     }
+    try {
+        await fetch(`/api/run/{{ run.id }}/cancel`, { method: 'POST' });
+        location.reload();
+    } catch (e) {
+        alert("Failed to terminate: " + e.message);
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = "Terminate Run";
+        }
+    }
+}
 
-    const timerInterval = setInterval(updateElapsed, 1000);
+(function() {
+    const runId = parseInt("{{ run.id }}", 10);
+    const currentStatus = "{{ run.status }}";
+    
+    if (currentStatus !== 'running') return;
 
     const pollInterval = setInterval(async () => {
         try {
-            const resp = await fetch(`/api/run/${runId}`);
-            const data = await resp.json();
-
-            const statusEl = document.getElementById('scan-status');
-            const docsEl = document.getElementById('scan-docs');
-
-            if (data.total_documents > 0 && docsEl) {
-                docsEl.textContent = `${data.total_documents} document(s) scraped`;
-            }
-
-            if (data.status === 'completed') {
-                clearInterval(pollInterval);
-                clearInterval(timerInterval);
-                if (statusEl) statusEl.textContent = 'Analysis complete! Loading results...';
-                setTimeout(() => location.reload(), 800);
-            } else if (data.status === 'failed') {
-                clearInterval(pollInterval);
-                clearInterval(timerInterval);
-                if (statusEl) {
-                    statusEl.textContent = `Run failed: ${data.error_message || 'Unknown error'}`;
-                    statusEl.style.color = 'var(--red)';
+            // Check lightweight API to see if status updated to avoid full HTML parse if completed/failed quickly
+            const respJson = await fetch(`/api/run/${runId}`);
+            if (respJson.ok) {
+                const data = await respJson.json();
+                if (data.status === 'completed' || data.status === 'failed' || data.status === 'cancelled') {
+                    clearInterval(pollInterval);
+                    location.reload();
+                    return;
                 }
-            } else {
-                const messages = [
-                    'Scraping target pages...',
-                    'Extracting content...',
-                    'Running keyword analysis...',
-                    'Classifying with LLM...',
-                    'Analyzing documents for threats...',
-                    'Evaluating gate criteria...',
-                    'Checking exclusion rules...',
-                    'Building rubric assessments...',
-                ];
-                const msgIdx = Math.min(Math.floor((Date.now() - startTime) / 6000), messages.length - 1);
-                if (statusEl) statusEl.textContent = messages[msgIdx];
             }
-        } catch (err) {}
-    }, 3000);
+            
+            // Poll HTML snippet to update DOM directly without full refresh
+            const resp = await fetch(window.location.href);
+            const html = await resp.text();
+            
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            
+            // Update Findings List
+            const newList = doc.getElementById('findings-list');
+            const oldList = document.getElementById('findings-list');
+            if (newList && oldList) {
+                oldList.innerHTML = newList.innerHTML;
+            }
+            
+            // Update Metrics Grid
+            const newMetrics = doc.querySelector('.metrics-grid');
+            const oldMetrics = document.querySelector('.metrics-grid');
+            if (newMetrics && oldMetrics) {
+                oldMetrics.innerHTML = newMetrics.innerHTML;
+            }
+            
+            // Trigger filters again
+            if (typeof initRunDetailFindings === 'function') {
+                initRunDetailFindings();
+            }
+            
+        } catch (err) {
+            console.error(err);
+        }
+    }, 5000);
 
-    setTimeout(() => { clearInterval(pollInterval); clearInterval(timerInterval); }, 600000);
+    setTimeout(() => clearInterval(pollInterval), 600000); // safety 10 min
 })();
 </script>
-{% endif %}
 {% endblock %}

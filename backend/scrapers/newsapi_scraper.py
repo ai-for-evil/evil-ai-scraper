@@ -1,7 +1,12 @@
 """NewsAPI scraper — searches for news articles about AI harm/misuse."""
+import asyncio
+import re
+from urllib.parse import urlparse
+
+import trafilatura
+
 from backend.scrapers.base import BaseScraper, ScrapedDocument
 from backend.config import config
-import trafilatura
 
 NEWSAPI_URL = "https://newsapi.org/v2/everything"
 
@@ -14,6 +19,23 @@ NEWS_QUERIES = [
     '"facial recognition" AND (privacy OR mass surveillance)',
     '"autonomous weapon" OR "killer robot" OR "AI targeting"',
 ]
+
+_HREF_RE = re.compile(
+    r"""href\s*=\s*["'](https?://[^"'>\s#]+)["']""",
+    re.IGNORECASE,
+)
+
+_SKIP_HOST_SUBSTR = (
+    "facebook.com",
+    "twitter.com",
+    "x.com",
+    "instagram.com",
+    "tiktok.com",
+    "doubleclick",
+    "googleadservices",
+    "googlesyndication",
+    "youtube.com/watch",
+)
 
 
 class NewsAPIScraper(BaseScraper):
@@ -37,7 +59,7 @@ class NewsAPIScraper(BaseScraper):
         for query in NEWS_QUERIES:
             if len(results) >= self.max_results:
                 break
-                
+
             page = 1
             while len(results) < self.max_results:
                 await self._rate_limit()
@@ -59,7 +81,7 @@ class NewsAPIScraper(BaseScraper):
                     if data.get("status") != "ok":
                         print(f"[NewsAPI] Error: {data.get('message', 'Unknown')}")
                         break
-                        
+
                     articles = data.get("articles", [])
                     if not articles:
                         break
@@ -67,7 +89,7 @@ class NewsAPIScraper(BaseScraper):
                     for article in articles:
                         if len(results) >= self.max_results:
                             break
-                            
+
                         url = article.get("url", "")
                         if not url or url in seen_urls:
                             continue
@@ -80,8 +102,13 @@ class NewsAPIScraper(BaseScraper):
                         published = article.get("publishedAt", "")
                         author = article.get("author", "")
 
-                        # Try to fetch full article text
-                        full_text = await self._fetch_full_article(url)
+                        full_text, raw_html = await self._fetch_full_article(url)
+
+                        linked_extras = ""
+                        if raw_html and config.MAX_OUTBOUND_LINK_FETCHES > 0:
+                            linked_extras = await self._fetch_linked_page_excerpts(
+                                raw_html, article_url=url
+                            )
 
                         text_parts = [
                             f"Title: {title}",
@@ -94,8 +121,10 @@ class NewsAPIScraper(BaseScraper):
                             "Full Article:",
                             full_text or content or description,
                         ]
+                        if linked_extras:
+                            text_parts.extend(["", "Related / linked sources (extracts):", linked_extras])
 
-                        results.append(ScrapedDocument(
+                        await self._emit_doc(results, ScrapedDocument(
                             url=url,
                             title=title or "Untitled",
                             text="\n".join(text_parts),
@@ -110,14 +139,58 @@ class NewsAPIScraper(BaseScraper):
 
         return results
 
-    async def _fetch_full_article(self, url: str) -> str:
-        """Try to fetch and extract the full article text."""
+    async def _fetch_full_article(self, url: str) -> tuple[str, str]:
+        """Fetch article HTML; return (extracted text, raw html) for link mining."""
         try:
-            resp = await self.client.get(url, timeout=15.0)
+            resp = await self.client.get(url, timeout=20.0)
             if resp.status_code == 200:
-                extracted = trafilatura.extract(resp.text, include_tables=True)
+                html = resp.text
+                extracted = trafilatura.extract(html, include_tables=True)
+                cap = min(12000, max(4000, config.LLM_DOCUMENT_MAX_CHARS // 2))
                 if extracted:
-                    return extracted[:6000]
+                    return extracted[:cap], html
+                return "", html
         except Exception:
             pass
-        return ""
+        return "", ""
+
+    async def _fetch_linked_page_excerpts(self, html: str, article_url: str) -> str:
+        """Follow a small number of outbound https links for extra context."""
+        max_n = config.MAX_OUTBOUND_LINK_FETCHES
+        if max_n <= 0:
+            return ""
+
+        base_host = urlparse(article_url).netloc.lower()
+        hrefs = _HREF_RE.findall(html or "")
+        seen: set[str] = set()
+        chunks: list[str] = []
+        delay_extra = self.delay * config.SCRAPE_DEPTH_DELAY_MULTIPLIER
+
+        for raw in hrefs:
+            if len(chunks) >= max_n:
+                break
+            u = raw.split("#")[0].strip()
+            if not u or u in seen:
+                continue
+            seen.add(u)
+            try:
+                host = urlparse(u).netloc.lower()
+            except Exception:
+                continue
+            if host == base_host:
+                continue
+            if any(s in u.lower() for s in _SKIP_HOST_SUBSTR):
+                continue
+
+            await asyncio.sleep(delay_extra)
+            try:
+                r = await self.client.get(u, timeout=14.0)
+                if r.status_code != 200:
+                    continue
+                ex = trafilatura.extract(r.text)
+                if ex and len(ex.strip()) > 120:
+                    chunks.append(f"--- Linked page ({u}) ---\n{ex[:2800]}")
+            except Exception:
+                continue
+
+        return "\n\n".join(chunks)

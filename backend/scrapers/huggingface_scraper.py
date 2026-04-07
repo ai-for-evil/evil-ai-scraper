@@ -74,7 +74,7 @@ class HuggingFaceScraper(BaseScraper):
                         model_card or "(No model card available)",
                     ]
 
-                    results.append(ScrapedDocument(
+                    await self._emit_doc(results, ScrapedDocument(
                         url=f"https://huggingface.co/{model_id}",
                         title=model_id,
                         text="\n".join(text_parts),

@@ -23,10 +23,12 @@ class BaseScraper:
     SOURCE_NAME: str = "generic"
     DOCUMENT_TYPE: str = "unknown"
 
-    def __init__(self, user_agent: str = "AIForEvilResearchBot/1.0", delay: float = 1.0, max_results: int = 60, **kwargs):
+    def __init__(self, user_agent: str = "AIForEvilResearchBot/1.0", delay: float = 1.0, max_results: int = 60, on_doc_found=None, is_cancelled=None, **kwargs):
         self.user_agent = user_agent
         self.delay = delay
         self.max_results = max_results
+        self.on_doc_found = on_doc_found
+        self.is_cancelled = is_cancelled
         self.client: Optional[httpx.AsyncClient] = None
 
     async def __aenter__(self):
@@ -43,7 +45,14 @@ class BaseScraper:
 
     async def _rate_limit(self):
         """Respect rate limiting between requests."""
+        if self.is_cancelled and self.is_cancelled():
+            raise Exception("RunCancelled")
         await asyncio.sleep(self.delay)
+
+    async def _emit_doc(self, results_list: list, doc: ScrapedDocument):
+        results_list.append(doc)
+        if self.on_doc_found:
+            await self.on_doc_found(doc)
 
     async def scrape(self) -> list[ScrapedDocument]:
         """Override in subclasses. Returns list of scraped documents."""

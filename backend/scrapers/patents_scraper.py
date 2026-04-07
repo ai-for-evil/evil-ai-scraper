@@ -54,7 +54,7 @@ class PatentsScraper(BaseScraper):
                         if extracted and len(extracted) > 100:
                             if search_url not in seen_urls:
                                 seen_urls.add(search_url)
-                                results.append(ScrapedDocument(
+                                await self._emit_doc(results, ScrapedDocument(
                                     url=search_url,
                                     title=f"Patent Search: {query}",
                                     text=extracted[:8000],
@@ -81,7 +81,7 @@ class PatentsScraper(BaseScraper):
                                 include_tables=True,
                             )
                             if extracted and len(extracted.strip()) > 100:
-                                results.append(ScrapedDocument(
+                                await self._emit_doc(results, ScrapedDocument(
                                     url=url,
                                     title=f"Patent {path.split('/')[-2]}",
                                     text=f"Search Query: {query}\n\nPatent Details:\n{extracted[:8000]}",

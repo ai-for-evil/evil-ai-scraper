@@ -2,13 +2,14 @@
 import asyncio
 import json
 from pathlib import Path
-from fastapi import FastAPI, Request, BackgroundTasks
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, Request, BackgroundTasks, HTTPException
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from backend.database import setup_database, get_db
-from backend.models import Run, Document, Classification
+from backend.models import Run, Document, Classification, Entity, ReviewItemDB
 from backend.pipeline.processor import run_url_scrape, run_source_scrape
+from backend.csv_export import build_run_findings_csv
 
 # Paths
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
@@ -132,6 +133,9 @@ async def run_detail(request: Request, run_id: int):
                     "exclusion_3": c.exclusion_3 or "",
                     "include_in_repo": c.include_in_repo or "",
                     "evidence_summary": c.evidence_summary or "",
+                    "relevance_score": c.relevance_score,
+                    "signal_debug": json.loads(c.signal_debug) if c.signal_debug else None,
+                    "ambiguous_codes": json.loads(c.ambiguous_codes) if c.ambiguous_codes else [],
                 })
 
             cls_data.sort(key=lambda c: c["confidence"], reverse=True)
@@ -207,6 +211,37 @@ async def run_detail(request: Request, run_id: int):
         top_threats.sort(key=lambda x: x["confidence"], reverse=True)
         top_threats = top_threats[:10]
 
+        # Get entities and review items for this run
+        entities_data = []
+        entity_rows = db.query(Entity).filter(Entity.run_id == run_id).order_by(Entity.confidence.desc()).all()
+        for e in entity_rows:
+            entities_data.append({
+                "entity_id": e.entity_id,
+                "entity_name": e.entity_name,
+                "aliases": json.loads(e.aliases) if e.aliases else [],
+                "canonical_code": e.canonical_code,
+                "subgroup_name": e.subgroup_name,
+                "confidence": e.confidence,
+                "rationale": e.rationale,
+                "source_urls": json.loads(e.source_urls) if e.source_urls else [],
+                "review_status": e.review_status,
+                "merge_confidence": e.merge_confidence,
+                "seed_overlap": e.seed_overlap,
+            })
+
+        reviews_data = []
+        review_rows = db.query(ReviewItemDB).filter(ReviewItemDB.run_id == run_id).all()
+        for r in review_rows:
+            reviews_data.append({
+                "review_id": r.review_id,
+                "reason": r.reason,
+                "severity": r.severity,
+                "entity_name": r.entity_name,
+                "source_url": r.source_url,
+                "details": r.details,
+                "suggested_code": r.suggested_code,
+            })
+
     return templates.TemplateResponse("run_detail.html", {
         "request": request,
         "run": run_data,
@@ -218,6 +253,8 @@ async def run_detail(request: Request, run_id: int):
         "source_counts": source_counts,
         "status_counts": status_counts,
         "top_threats": top_threats,
+        "entities": entities_data,
+        "reviews": reviews_data,
     })
 
 
@@ -258,14 +295,17 @@ async def api_scrape_sources(request: Request, background_tasks: BackgroundTasks
     if not sources:
         return JSONResponse({"error": "At least one source is required"}, status_code=400)
 
-    valid_sources = [s for s in sources if s in {
-        "arxiv", "github", "huggingface", "newsapi", "eu_ai_act", "patents"
-    }]
+    allowed = {
+        "arxiv", "github", "huggingface", "newsapi", "eu_ai_act", "patents",
+        "manifest",
+    }
+    valid_sources = [s for s in sources if s in allowed or s.startswith("manifest:")]
     if not valid_sources:
         return JSONResponse({"error": "No valid sources selected"}, status_code=400)
 
     reviewer_name = data.get("reviewer_name", "").strip()
     max_results = data.get("max_results", 60)
+    manifest_fresh = bool(data.get("manifest_fresh", False))
 
     with get_db() as db:
         run = Run(
@@ -278,7 +318,9 @@ async def api_scrape_sources(request: Request, background_tasks: BackgroundTasks
         db.commit()
         run_id = run.id
 
-    background_tasks.add_task(_run_sources_async, run_id, valid_sources, max_results)
+    background_tasks.add_task(
+        _run_sources_async, run_id, valid_sources, max_results, manifest_fresh,
+    )
     return JSONResponse({"run_id": run_id, "status": "started"})
 
 
@@ -324,6 +366,79 @@ async def api_get_run(run_id: int):
         })
 
 
+@app.get("/api/run/{run_id}/export.csv")
+async def api_export_run_csv(run_id: int):
+    """Download matched classifications for this run as CSV (CLI-style entity/review columns)."""
+    try:
+        data, filename = build_run_findings_csv(run_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return Response(
+        content=data,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
+
+
+@app.get("/api/run/{run_id}/entities")
+async def api_get_entities(run_id: int):
+    """Get deduplicated entities for a run."""
+    with get_db() as db:
+        run = db.query(Run).filter(Run.id == run_id).first()
+        if not run:
+            return JSONResponse({"error": "Run not found"}, status_code=404)
+        entities = db.query(Entity).filter(Entity.run_id == run_id).order_by(Entity.confidence.desc()).all()
+        return JSONResponse([{
+            "entity_id": e.entity_id,
+            "entity_name": e.entity_name,
+            "aliases": json.loads(e.aliases) if e.aliases else [],
+            "canonical_code": e.canonical_code,
+            "subgroup_name": e.subgroup_name,
+            "confidence": e.confidence,
+            "rationale": e.rationale,
+            "source_urls": json.loads(e.source_urls) if e.source_urls else [],
+            "review_status": e.review_status,
+            "merge_confidence": e.merge_confidence,
+            "seed_overlap": e.seed_overlap,
+        } for e in entities])
+
+
+@app.get("/api/run/{run_id}/review-queue")
+async def api_get_review_queue(run_id: int):
+    """Get review queue items for a run."""
+    with get_db() as db:
+        run = db.query(Run).filter(Run.id == run_id).first()
+        if not run:
+            return JSONResponse({"error": "Run not found"}, status_code=404)
+        reviews = db.query(ReviewItemDB).filter(ReviewItemDB.run_id == run_id).all()
+        return JSONResponse([{
+            "review_id": r.review_id,
+            "reason": r.reason,
+            "severity": r.severity,
+            "entity_name": r.entity_name,
+            "source_url": r.source_url,
+            "details": r.details,
+            "suggested_code": r.suggested_code,
+        } for r in reviews])
+
+
+@app.post("/api/run/{run_id}/cancel")
+async def api_cancel_run(run_id: int):
+    """Mark a run as cancelled."""
+    with get_db() as db:
+        run = db.query(Run).filter(Run.id == run_id).first()
+        if not run:
+            return JSONResponse({"error": "Run not found"}, status_code=404)
+        if run.status == "running":
+            run.status = "cancelled"
+            run.error_message = "Terminated by user."
+            db.commit()
+            return JSONResponse({"status": "cancelled", "message": "Run termination requested."})
+        return JSONResponse({"status": run.status, "message": "Run cannot be cancelled in its current state."})
+
+
 # ---------------------------------------------------------------------------
 # Background task wrappers
 # ---------------------------------------------------------------------------
@@ -332,5 +447,12 @@ async def _run_url_async(run_id: int, url: str):
     await run_url_scrape(run_id, url)
 
 
-async def _run_sources_async(run_id: int, sources: list[str], max_results: int = 60):
-    await run_source_scrape(run_id, sources, max_results)
+async def _run_sources_async(
+    run_id: int,
+    sources: list[str],
+    max_results: int = 60,
+    manifest_fresh: bool = False,
+):
+    await run_source_scrape(
+        run_id, sources, max_results, manifest_fresh=manifest_fresh,
+    )
