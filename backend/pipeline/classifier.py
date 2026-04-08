@@ -407,10 +407,47 @@ def _infer_name_clarity(ai_system_name: str) -> str:
     return "named_product"
 
 
+def _is_known_evil_name(ai_system_name: str) -> bool:
+    """Check if this AI system name matches any known evil AI name."""
+    aname = (ai_system_name or "").lower().strip()
+    compact = re.sub(r"[^a-z0-9]+", "", aname)
+    for known in KNOWN_EVIL_AI_NAMES:
+        if known in aname:
+            return True
+        kc = re.sub(r"[^a-z0-9]+", "", known)
+        if len(kc) >= 4 and kc in compact:
+            return True
+    return False
+
+
+def _extract_names_from_url(url: str) -> list[str]:
+    """Extract potential tool names from a URL's domain and path."""
+    names = []
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        domain = parsed.hostname or ""
+        # Strip common prefixes
+        for prefix in ("www.", "app.", "web."):
+            if domain.startswith(prefix):
+                domain = domain[len(prefix):]
+        # Take the base domain name (e.g. 'fraudgpt' from 'fraudgpt.com')
+        base = domain.split(".")[0] if domain else ""
+        if base and len(base) >= 3:
+            names.append(base.lower())
+        # Also check path segments
+        for seg in parsed.path.strip("/").split("/"):
+            if seg and len(seg) >= 3 and not seg.startswith("api"):
+                names.append(seg.lower())
+    except Exception:
+        pass
+    return names
+
+
 def apply_confidence_adjustments(cls: dict) -> None:
     """
-    Lower confidence for vague or unnamed systems; slight boost for known evil-AI names.
-    Merges name_clarity into criteria_scores for storage.
+    Adjust confidence based on name clarity, but with a hard floor for known
+    evil AI names so they are NEVER suppressed.
     """
     raw = float(cls.get("confidence") or 0.0)
     nc = (cls.get("name_clarity") or "").strip().lower()
@@ -418,28 +455,39 @@ def apply_confidence_adjustments(cls: dict) -> None:
         nc = _infer_name_clarity(cls.get("ai_system_name", ""))
     cls["name_clarity"] = nc
 
+    aname = (cls.get("ai_system_name") or "").lower()
+    is_known = _is_known_evil_name(aname)
+
+    # If this is a KNOWN evil AI, force name_clarity to named_product
+    if is_known:
+        nc = "named_product"
+        cls["name_clarity"] = nc
+
+    # Softer multipliers — still penalize vagueness but less aggressively
     mult = 1.0
     if nc == "unknown":
-        mult *= 0.52
+        mult *= 0.65
     elif nc == "generic":
-        mult *= 0.58
+        mult *= 0.70
     elif nc == "concept_only":
-        mult *= 0.78
+        mult *= 0.85
     elif nc == "named_product":
         mult *= 1.0
 
-    aname = (cls.get("ai_system_name") or "").lower()
     if "unnamed system" in aname:
-        mult *= 0.48
-    if len((cls.get("ai_system_name") or "").strip()) <= 2:
-        mult *= 0.5
+        mult *= 0.60
+    if len(aname.strip()) <= 2 and not is_known:
+        mult *= 0.6
 
-    for known in KNOWN_EVIL_AI_NAMES:
-        if known in aname:
-            mult = min(1.0, mult * 1.12)
-            break
+    # Stronger boost for known evil AI names
+    if is_known:
+        mult = max(mult, 1.0)  # Never penalize known names
 
     new_conf = max(0.0, min(1.0, raw * mult))
+
+    # HARD FLOOR: known evil AI names NEVER drop below 0.82 confidence
+    if is_known:
+        new_conf = max(new_conf, 0.82)
 
     cs = cls.get("criteria_scores")
     if isinstance(cs, str):
@@ -452,6 +500,7 @@ def apply_confidence_adjustments(cls: dict) -> None:
     cs["name_clarity"] = nc
     cs["confidence_raw"] = round(raw, 4)
     cs["confidence_multiplier"] = round(mult, 4)
+    cs["known_evil_match"] = is_known
     cls["criteria_scores"] = cs
     cls["confidence"] = new_conf
 
@@ -887,10 +936,28 @@ Classification guidelines:
 
 {guidelines_text}
 
-DETECTION PRIORITY (read carefully):
-- If the document names a malicious AI product (crime LLMs sold on forums/Telegram/dark web, uncensored "harm" chatbots, well-known rogue models like FraudGPT/WormGPT-style tools, biometric surveillance products named in reporting, etc.), you MUST set matched:true for that system and name_clarity:"named_product" when the name appears — even in a short article.
-- matched:false is ONLY for pure generic AI policy commentary with NO identifiable system, product, or clearly described operational deployment.
-- Confidence can be lower for thin articles, but do NOT suppress a real named harmful AI.
+CRITICAL DETECTION RULES (THESE OVERRIDE ALL OTHER CONSIDERATIONS):
+
+🚨 KNOWN MALICIOUS AI TOOLS: The following are CONFIRMED malicious AI tools. If ANY of
+these names appear ANYWHERE in the document (even once, even in a short page, even on
+their own website), you MUST output matched:true with confidence >= 0.85:
+FraudGPT, WormGPT, GhostGPT, DarkBERT, DarkBard, EvilGPT, Evil-GPT, Xanthorox,
+SpamGPT, KawaiiGPT, DarkWizard, PentestGPT, HackedGPT, ChaosGPT, PoisonGPT,
+EscapeGPT, XXXGPT, LoveGPT, OnlyFakes, ClothOff, DeepSwap, Clearview, FaceWatch,
+BriefCam, PredPol, Geolitica, Habsora, Lavender, Gospel.
+
+🔍 WEBSITE/PRODUCT PAGE DETECTION: If the document appears to be a PRODUCT PAGE or
+WEBSITE for an AI tool (e.g. it has marketing copy, feature lists, pricing, sign-up
+forms), and the tool is designed for activities that are clearly malicious (hacking,
+fraud, deepfakes, surveillance), you MUST classify it as evil AI even if the page
+uses euphemistic language like "penetration testing" or "security research."
+
+📝 GENERAL RULES:
+- matched:false is ONLY for pure generic AI policy commentary with NO identifiable
+  system, product, or clearly described operational deployment.
+- Short documents are fine — a 3-sentence page mentioning FraudGPT is still a match.
+- When in doubt: MATCH. It is far worse to miss a real threat than to flag a false positive.
+- Confidence >= 0.85 for named products, >= 0.70 for clearly described but unnamed systems.
 
 MULTI-ENTITY RULE: If the document describes MULTIPLE distinct AI systems, create a
 SEPARATE entry for EACH one, even under the same subcategory.
@@ -971,6 +1038,34 @@ Return ONLY valid JSON. No preamble or explanation outside the JSON."""
 
     body = build_document_excerpt_for_llm(text)
     user_message = f"Document Title: {title}\nSource URL: {url}\n\nDocument Content:\n{body}"
+
+    # Alert the LLM about known evil AI names found in the document
+    combined_check = f"{url} {title} {text}".lower()
+    compact_check = re.sub(r"[^a-z0-9]+", "", combined_check)
+    found_known = []
+    for known_name, cat_id in KNOWN_EVIL_AI_NAMES.items():
+        kc = re.sub(r"[^a-z0-9]+", "", known_name)
+        if known_name in combined_check or (len(kc) >= 4 and kc in compact_check):
+            found_known.append((known_name.replace("-", " ").title(), cat_id))
+
+    # URL domain analysis
+    url_names = _extract_names_from_url(url)
+    for uname in url_names:
+        uc = re.sub(r"[^a-z0-9]+", "", uname)
+        for known_name, cat_id in KNOWN_EVIL_AI_NAMES.items():
+            kc = re.sub(r"[^a-z0-9]+", "", known_name)
+            if kc in uc or uc in kc:
+                entry = (known_name.replace("-", " ").title(), cat_id)
+                if entry not in found_known:
+                    found_known.append(entry)
+
+    if found_known:
+        alert_lines = ["\n\n⚠️⚠️⚠️ KNOWN EVIL AI DETECTED IN THIS DOCUMENT ⚠️⚠️⚠️"]
+        for name, cid in found_known:
+            alert_lines.append(f"  → {name} (taxonomy code: {cid}) — MUST be classified as matched:true")
+        alert_lines.append("You MUST include these in your output with matched:true and confidence >= 0.85.")
+        alert_lines.append("Failure to classify these is a critical error.")
+        user_message += "\n".join(alert_lines)
 
     # Inject hybrid pre-score hints into the LLM context
     if pre_score:
@@ -1054,7 +1149,7 @@ Return ONLY valid JSON. No preamble or explanation outside the JSON."""
                     "[Classifier] Using keyword/name fallback — LLM returned no matched evil-AI rows "
                     "but detectors found known-name or keyword signals."
                 )
-                return fb
+                raw = fb
 
     result = normalize_classifications_result(
         raw,
@@ -1084,6 +1179,116 @@ Return ONLY valid JSON. No preamble or explanation outside the JSON."""
             cls["_relevance_score"] = relevance.get("score", 0.0)
             cls["_relevance_reasons"] = relevance.get("reasons", [])
 
+    # STAGE 6: GUARANTEED KNOWN-NAME INJECTION
+    # Final safety net — if ANY known evil AI name appears in text/url/title but
+    # is NOT in the final classifications, force-inject it. This CANNOT be overridden
+    # by the LLM or by confidence adjustments.
+    result = _guarantee_known_names(result, text, url, title)
+
+    return result
+
+
+def _guarantee_known_names(
+    result: dict,
+    text: str,
+    url: str,
+    title: str,
+) -> dict:
+    """
+    FINAL SAFETY NET: Scan text/url/title for known evil AI names.
+    If any name appears but is NOT in the classifications, force-inject a classification.
+    This stage is UNOVERRIDEABLE — it guarantees obvious threats are never missed.
+    """
+    combined = f"{url} {title} {text}".lower()
+    compact = re.sub(r"[^a-z0-9]+", "", combined)
+
+    # Also extract names from URL domain
+    url_names = _extract_names_from_url(url)
+
+    # Already classified names (lowercase)
+    classified_names = set()
+    for cls in (result.get("classifications") or []):
+        aname = (cls.get("ai_system_name") or "").lower()
+        classified_names.add(aname)
+        classified_names.add(re.sub(r"[^a-z0-9]+", "", aname))
+
+    injected = []
+    for known_name, cat_id in KNOWN_EVIL_AI_NAMES.items():
+        known_compact = re.sub(r"[^a-z0-9]+", "", known_name)
+        # Check if this name is in text/url/title
+        found = False
+        if known_name in combined:
+            found = True
+        elif len(known_compact) >= 4 and known_compact in compact:
+            found = True
+        # Also check URL domain names
+        if not found:
+            for uname in url_names:
+                uname_compact = re.sub(r"[^a-z0-9]+", "", uname)
+                if known_compact in uname_compact or uname_compact in known_compact:
+                    found = True
+                    break
+
+        if not found:
+            continue
+
+        # Already classified?
+        if known_name in classified_names or known_compact in classified_names:
+            continue
+
+        # Check if any existing classification already covers this name
+        already_covered = False
+        for cn in classified_names:
+            if known_compact in cn or cn in known_compact:
+                already_covered = True
+                break
+        if already_covered:
+            continue
+
+        # Force-inject: this name was in the document but got missed
+        cat_data = KEYWORD_DICTIONARY.get(cat_id, {})
+        display_name = known_name.replace("-", " ").title()
+        entry = {
+            "category_id": cat_id,
+            "category_name": cat_data.get("name", cat_id),
+            "matched": True,
+            "confidence": 0.88,
+            "name_clarity": "named_product",
+            "evidence_quotes": [],
+            "criteria_scores": {"known_name_guarantee": True},
+            "reasoning": f"Known malicious AI '{display_name}' detected in document via name-guarantee stage.",
+            "ai_system_name": display_name,
+            "developer_org": "Unknown",
+            "abuse_description": f"{display_name} is a known malicious AI tool identified by the AI-for-Evil taxonomy.",
+            "criminal_or_controversial": "Criminal AI",
+            "descriptive_category": f"Known Malicious AI ({cat_id})",
+            "tool_website_url": url if known_compact in re.sub(r'[^a-z0-9]+', '', url.lower()) else "N/A",
+            "public_tagline": "N/A",
+            "stated_use_case": f"Known tool flagged by taxonomy under {cat_id}.",
+            "target_victim": "See taxonomy guidelines",
+            "primary_output": "N/A",
+            "harm_category": cat_data.get("name", "Cybercrime"),
+            "gate_1": "Y", "gate_2": "Y", "gate_3": "Y",
+            "exclusion_1": "N", "exclusion_2": "N", "exclusion_3": "N",
+            "include_in_repo": "Y",
+            "evidence_summary": f"Document mentions known malicious AI system: {display_name}.",
+        }
+        injected.append(entry)
+        classified_names.add(known_name)
+        classified_names.add(known_compact)
+        print(
+            f"[Classifier] GUARANTEE INJECTION: '{display_name}' ({cat_id}) — "
+            f"detected in document but was missing from LLM output."
+        )
+
+    if injected:
+        if "classifications" not in result:
+            result["classifications"] = []
+        result["classifications"].extend(injected)
+        result["is_evil_ai"] = True
+        confidences = [c.get("confidence", 0) for c in result["classifications"]]
+        result["overall_confidence"] = max(confidences) if confidences else 0.0
+
     return result
 
 
@@ -1100,10 +1305,15 @@ def _keyword_only_classification(
     """
     classifications = []
     for cat_id, match_data in keyword_matches.items():
-        confidence = min(0.3 + (match_data["count"] * 0.08), 0.65)
+        # Higher base confidence for fallback — if detectors triggered, trust them
+        has_known = any(h.lower() in KNOWN_EVIL_AI_NAMES for h in match_data["hits"])
+        if has_known:
+            confidence = 0.88  # Known evil AI names get high fallback confidence
+        else:
+            confidence = min(0.35 + (match_data["count"] * 0.10), 0.75)
         # Boost from Shiv pre-score if available and codes match
         if pre_score and pre_score.final_code == cat_id:
-            confidence = max(confidence, pre_score.confidence * 0.8)
+            confidence = max(confidence, pre_score.confidence * 0.85)
         hits_preview = ", ".join(match_data["hits"][:8])
         named_hit = None
         for h in match_data["hits"]:

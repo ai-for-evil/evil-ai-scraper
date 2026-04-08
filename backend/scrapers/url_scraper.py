@@ -78,10 +78,13 @@ class URLScraper(BaseScraper):
             bs4_text = self._bs4_deep_extract(html)
             extracted = f"{extracted}\n{bs4_text}".strip() if extracted else bs4_text
 
-        return [ScrapedDocument(
+        doc = ScrapedDocument(
             url=self.url,
             title=title,
             text=extracted or "Could not extract text from this page.",
             source_name=self.SOURCE_NAME,
             document_type=self.DOCUMENT_TYPE,
-        )]
+        )
+        results = []
+        await self._emit_doc(results, doc)
+        return results

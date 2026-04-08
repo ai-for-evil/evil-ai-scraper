@@ -222,12 +222,25 @@ async def _process_documents(run_id: int, scraped_docs: list[ScrapedDocument]):
             db_doc.keyword_matched = len(keyword_matches) > 0
             db_doc.keyword_categories = json.dumps(list(keyword_matches.keys()))
 
+            # Check if any known evil AI names are detected
+            has_known_name = bool(name_matches)
+
+            if keyword_matches:
+                kw_log = ", ".join(
+                    f"{cid}({len(d['hits'])} hits)" for cid, d in keyword_matches.items()
+                )
+                print(f"[Processor] Doc '{doc.title[:60]}' keyword matches: {kw_log}"
+                      f"{' [HAS KNOWN NAME]' if has_known_name else ''}")
+
             db.add(db_doc)
             db.commit()
             doc_id = db_doc.id
 
-        # LLM Classification (for keyword-matched docs, or all if LLM enabled)
-        if keyword_matches or config.USE_LLM:
+        # LLM Classification — always classify if:
+        # 1. Keyword/name matches found, OR
+        # 2. LLM is enabled, OR
+        # 3. Known evil AI names detected in URL/title/text
+        if keyword_matches or config.USE_LLM or name_matches:
             try:
                 result = await classify_with_ollama(
                     text=doc.text,
