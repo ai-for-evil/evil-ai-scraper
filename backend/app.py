@@ -196,6 +196,18 @@ async def api_get_documents(run_id: int):
                     "reasoning": c.reasoning,
                     "ai_system_name": c.ai_system_name,
                     "developer_org": c.developer_org,
+                    "criminal_or_controversial": c.criminal_or_controversial,
+                    "descriptive_category": c.descriptive_category,
+                    "tool_website_url": c.tool_website_url,
+                    "public_tagline": c.public_tagline,
+                    "stated_use_case": c.stated_use_case,
+                    "target_victim": c.target_victim,
+                    "primary_output": c.primary_output,
+                    "harm_category": c.harm_category,
+                    "gate_1": c.gate_1,
+                    "gate_2": c.gate_2,
+                    "gate_3": c.gate_3,
+                    "evidence_summary": c.evidence_summary
                 })
 
             max_conf = max((c.confidence for c in classifications), default=-1.0)

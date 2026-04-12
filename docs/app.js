@@ -254,13 +254,107 @@ window.submitSourceScrape = async () => {
 // 2. RUN DETAIL VIEW
 let currentPollInterval = null;
 
+window.applyFilters = () => {
+    window.lastFilterText = document.getElementById('filter-text')?.value.toLowerCase() || '';
+    window.lastFilterStatus = document.getElementById('filter-status')?.value || '';
+    window.lastFilterConf = parseFloat(document.getElementById('filter-conf')?.value || '0');
+    
+    const tableContainer = document.getElementById('docs-table-container');
+    if(!tableContainer) return;
+
+    if (!window.currentRunDocs) window.currentRunDocs = [];
+
+    let filteredDocs = window.currentRunDocs.filter(d => {
+        return d.classifications.some(c => {
+            let passStatus = window.lastFilterStatus === '' || c.status === window.lastFilterStatus;
+            let passConf = c.confidence >= window.lastFilterConf;
+            let passText = window.lastFilterText === '' || 
+                           (c.ai_system_name || '').toLowerCase().includes(window.lastFilterText) || 
+                           (c.category_name || '').toLowerCase().includes(window.lastFilterText) || 
+                           (d.title || '').toLowerCase().includes(window.lastFilterText) ||
+                           (d.source_name || '').toLowerCase().includes(window.lastFilterText);
+            return passStatus && passConf && passText;
+        });
+    });
+
+    let renderedRows = filteredDocs.map(d => {
+        let visibleClassifications = d.classifications.filter(c => {
+            let passStatus = window.lastFilterStatus === '' || c.status === window.lastFilterStatus;
+            let passConf = c.confidence >= window.lastFilterConf;
+            let passText = window.lastFilterText === '' || 
+                           (c.ai_system_name || '').toLowerCase().includes(window.lastFilterText) || 
+                           (c.category_name || '').toLowerCase().includes(window.lastFilterText) || 
+                           (d.title || '').toLowerCase().includes(window.lastFilterText) ||
+                           (d.source_name || '').toLowerCase().includes(window.lastFilterText);
+            return passStatus && passConf && passText;
+        });
+
+        return `
+            <tr>
+                <td><span class="badge" style="background:#eee">${d.source_name || d.url.split('/')[2]}</span></td>
+                <td>
+                    <div style="font-weight: 500; margin-bottom:4px; max-width:300px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${d.title}">${d.title || 'Untitled'}</div>
+                    <a href="${d.url}" target="_blank" class="text-secondary" style="text-decoration:none;font-size:0.8rem; display:flex; align-items:center; gap:4px">${icons.link} View Original</a>
+                </td>
+                <td>
+                    <div style="font-weight:600; color: ${d.max_confidence >= 0.7 ? 'var(--danger-color)' : (d.max_confidence >= 0.4 ? '#f59e0b' : 'inherit')}">
+                        ${Math.round(d.max_confidence * 100)}%
+                    </div>
+                </td>
+                <td>
+                    <div class="flex-col" style="gap:8px;">
+                        ${visibleClassifications.map(c => `
+                            <details style="background:var(--bg-color); padding: 8px; border-radius: 6px; font-size:0.85rem;">
+                                <summary style="cursor:pointer; font-weight:500; outline:none; display:flex; gap:8px; align-items:flex-start;">
+                                    <div style="display:flex; flex-direction:column;">
+                                        <span><strong>${c.ai_system_name || 'Unnamed Model'}</strong>: ${c.category_name}</span>
+                                    </div>
+                                    <span class="badge ${c.status}" style="font-size:0.65rem; margin-left:auto;">${c.status}</span>
+                                </summary>
+                                <div style="margin-top:12px; padding-top:12px; border-top:1px solid #ddd; display:flex; flex-direction:column; gap:8px; color:var(--text-secondary);">
+                                    ${c.stated_use_case ? `<div><strong style="color:var(--text-color)">Stated Use:</strong> ${c.stated_use_case}</div>` : ''}
+                                    ${c.target_victim ? `<div><strong style="color:var(--text-color)">Target Victim:</strong> ${c.target_victim}</div>` : ''}
+                                    ${c.primary_output ? `<div><strong style="color:var(--text-color)">Primary Output:</strong> ${c.primary_output}</div>` : ''}
+                                    ${c.harm_category ? `<div><strong style="color:var(--text-color)">Harm Category:</strong> ${c.harm_category}</div>` : ''}
+                                    ${c.evidence_summary ? `<div><strong style="color:var(--text-color)">Evidence:</strong> ${c.evidence_summary}</div>` : ''}
+                                    ${c.tool_website_url ? `<div><strong style="color:var(--text-color)">Website:</strong> <a href="${c.tool_website_url}" target="_blank">${c.tool_website_url}</a></div>` : ''}
+                                    ${c.reasoning ? `<div><strong style="color:var(--text-color)">LLM Reasoning:</strong> ${c.reasoning}</div>` : ''}
+                                    <div style="font-family:monospace; font-size:0.75rem; background:#eaeaea; padding:4px; border-radius:4px; margin-top:4px;">
+                                        Gates: [1: ${c.gate_1 || '-'}] [2: ${c.gate_2 || '-'}] [3: ${c.gate_3 || '-'}]
+                                    </div>
+                                </div>
+                            </details>
+                        `).join('')}
+                    </div>
+                </td>
+            </tr>
+        `;
+    });
+
+    tableContainer.innerHTML = renderedRows.length === 0 ? `<div class="empty-state">No matching documents found.</div>` : `
+        <table>
+            <thead>
+                <tr>
+                    <th style="width:15%">Source</th>
+                    <th style="width:25%">Title / Link</th>
+                    <th style="width:15%">Highest Confidence</th>
+                    <th style="width:45%">Classifications</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${renderedRows.join('')}
+            </tbody>
+        </table>
+    `;
+};
+
 async function renderRunDetail(container, runId) {
-    // Clear any previous polling
     if (currentPollInterval) clearInterval(currentPollInterval);
 
     try {
         const run = await fetchApi(`/run/${runId}`);
         const docs = await fetchApi(`/run/${runId}/documents`);
+        window.currentRunDocs = docs;
 
         let headerAlert = '';
         if (run.status === 'pending') {
@@ -273,7 +367,53 @@ async function renderRunDetail(container, runId) {
 
         let isCompleted = run.status === 'completed' || run.status === 'failed';
 
-        // Render
+        let allClassifications = [];
+        docs.forEach(d => {
+            d.classifications.forEach(c => allClassifications.push({...c, document: d}));
+        });
+        
+        allClassifications.sort((a,b) => b.confidence - a.confidence);
+        let top3 = allClassifications.slice(0, 3);
+        
+        let topThreatsHtml = '';
+        if (top3.length > 0) {
+            topThreatsHtml = `
+            <div class="card mb-4" style="border-top: 4px solid var(--danger-color)">
+                <h2 style="color:var(--danger-color)">Most Dangerous Threats</h2>
+                <div class="grid-auto">
+                    ${top3.map(t => `
+                        <div style="background:var(--bg-color); padding:16px; border-radius:8px;">
+                            <div class="flex-row justify-between mb-2">
+                                <strong style="font-size:1.1rem">${t.ai_system_name || 'Unnamed Model'}</strong>
+                                <span class="badge" style="background:#fecaca; color:#991b1b">${Math.round(t.confidence*100)}%</span>
+                            </div>
+                            <div class="text-secondary mb-2" style="font-size:0.85rem">${t.developer_org || 'Unknown Developer'}</div>
+                            <span class="badge ${t.status}">${t.category_name}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>`;
+        }
+
+        let filterHtml = `
+            <div class="flex-row mb-4" style="gap:16px; align-items:center; background:var(--bg-color); padding:12px; border-radius:8px;">
+                <input type="text" id="filter-text" class="input" placeholder="Search system, category, or source..." style="max-width:300px; padding: 6px 12px; font-size: 0.9rem;" onkeyup="applyFilters()">
+                <select id="filter-status" class="input" style="max-width:150px; padding: 6px 12px; font-size: 0.9rem;" onchange="applyFilters()">
+                    <option value="">All Statuses</option>
+                    <option value="confirmed">Confirmed</option>
+                    <option value="contested">Contested</option>
+                    <option value="pending">Pending</option>
+                    <option value="gray_area">Gray Area</option>
+                </select>
+                <select id="filter-conf" class="input" style="max-width:150px; padding: 6px 12px; font-size: 0.9rem;" onchange="applyFilters()">
+                    <option value="0">Any Confidence</option>
+                    <option value="0.5">> 50%</option>
+                    <option value="0.8">> 80%</option>
+                    <option value="0.95">> 95%</option>
+                </select>
+            </div>
+        `;
+
         container.innerHTML = `
             ${headerAlert}
             <div class="flex-row justify-between mb-4">
@@ -299,49 +439,21 @@ async function renderRunDetail(container, runId) {
                     <span class="stat-value">${Math.round(run.avg_confidence * 100)}%</span>
                 </div>
             </div>
+
+            ${topThreatsHtml}
             
             <div class="card">
                 <h2>Analysis Findings</h2>
-                ${docs.length === 0 ? `<div class="empty-state">No documents matched yet.</div>` : `
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Source</th>
-                                <th>Title / Link</th>
-                                <th>Highest Confidence</th>
-                                <th>Classifications</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${docs.map(d => `
-                                <tr>
-                                    <td><span class="badge" style="background:#eee">${d.source_name || d.url.split('/')[2]}</span></td>
-                                    <td>
-                                        <div style="font-weight: 500; margin-bottom:4px; max-width:400px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${d.title}">${d.title || 'Untitled'}</div>
-                                        <a href="${d.url}" target="_blank" class="text-secondary" style="text-decoration:none;font-size:0.8rem; display:flex; align-items:center; gap:4px">${icons.link} View Original</a>
-                                    </td>
-                                    <td>
-                                        <div style="font-weight:600; color: ${d.max_confidence >= 0.7 ? 'var(--danger-color)' : (d.max_confidence >= 0.4 ? '#f59e0b' : 'inherit')}">
-                                            ${Math.round(d.max_confidence * 100)}%
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <div class="flex-col">
-                                            ${d.classifications.map(c => `
-                                                <div style="background:var(--bg-color); padding: 8px; border-radius: 6px; font-size:0.85rem;">
-                                                    <strong>${c.ai_system_name || 'Unnamed Model'}</strong>: ${c.category_name} 
-                                                    (<span class="badge ${c.status}" style="font-size:0.65rem;">${c.status}</span>)
-                                                </div>
-                                            `).join('')}
-                                        </div>
-                                    </td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                `}
+                ${filterHtml}
+                <div id="docs-table-container"></div>
             </div>
         `;
+
+        if(window.lastFilterText) document.getElementById('filter-text').value = window.lastFilterText;
+        if(window.lastFilterStatus) document.getElementById('filter-status').value = window.lastFilterStatus;
+        if(window.lastFilterConf) document.getElementById('filter-conf').value = window.lastFilterConf;
+        
+        applyFilters();
 
         if (!isCompleted) {
             currentPollInterval = setTimeout(() => renderRunDetail(container, runId), 3000);
