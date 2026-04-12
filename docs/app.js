@@ -138,6 +138,7 @@ async function renderHome(container) {
                             <th>Status</th>
                             <th>Type</th>
                             <th>Input / Source</th>
+                            <th>Runner</th>
                             <th>Evil Found</th>
                             <th>Date</th>
                             <th>Actions</th>
@@ -150,6 +151,7 @@ async function renderHome(container) {
                                 <td><span class="badge ${r.status}">${r.status}</span></td>
                                 <td style="text-transform: capitalize;">${r.run_type}</td>
                                 <td><div style="max-width:200px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${r.input_url || r.sources.join(', ')}">${r.input_url || r.sources.join(', ')}</div></td>
+                                <td>${r.user_name ? `<span style="font-weight: 500;">${r.user_name}</span>` : `<span class="text-secondary" style="font-size:0.85rem">Anonymous</span>`}</td>
                                 <td style="font-weight:600; color: ${r.evil_found > 0 ? 'var(--danger-color)' : 'inherit'}">${r.evil_found}</td>
                                 <td>${new Date(r.created_at).toLocaleString()}</td>
                                 <td>
@@ -500,8 +502,8 @@ async function renderLeaderboard(container) {
                                     <td><span style="font-size: 1.2rem; font-weight:700; color: ${i === 0 ? '#ffd700' : (i === 1 ? '#c0c0c0' : (i === 2 ? '#cd7f32' : 'inherit'))}">#${i + 1}</span></td>
                                     <td style="font-weight: 500;">
                                         ${u.user_name 
-                                            ? `${u.user_name} <br><span style="font-size: 0.8rem; font-family: monospace; font-weight:normal;" class="text-secondary">${u.user_id}</span>` 
-                                            : `Anonymous Contributor <br><span style="font-size: 0.8rem; font-family: monospace; font-weight:normal;" class="text-secondary">${u.user_id}</span>`
+                                            ? `${u.user_name}` 
+                                            : `Anonymous Contributor`
                                         }
                                     </td>
                                     <td style="text-align: right; font-weight:600; color:var(--danger-color); font-size: 1.2rem;">${u.total_evil_found}</td>
