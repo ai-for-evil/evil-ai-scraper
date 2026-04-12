@@ -29,7 +29,7 @@ class Run(Base):
     rejected_count = Column(Integer, default=0)
     avg_confidence = Column(Float, default=0.0)
     error_message = Column(Text, nullable=True)
-    reviewer_name = Column(String(128), nullable=True)
+    user_id = Column(String(128), nullable=True)
 
     documents = relationship("Document", back_populates="run", cascade="all, delete-orphan")
     entities = relationship("Entity", back_populates="run", cascade="all, delete-orphan")
@@ -165,8 +165,10 @@ def _ensure_data_dir():
     """Make sure the data/ directory exists."""
     import os
     from pathlib import Path
-    data_dir = Path(config.DATABASE_URL.replace("sqlite:///", "")).parent
-    os.makedirs(data_dir, exist_ok=True)
+    if config.DATABASE_URL.startswith("sqlite"):
+        data_dir = Path(config.DATABASE_URL.replace("sqlite:///", "")).parent
+        if str(data_dir) and str(data_dir) != ".":
+            os.makedirs(data_dir, exist_ok=True)
 
 
 def get_engine():

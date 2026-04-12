@@ -42,7 +42,8 @@ def setup_database():
     """Initialize the database and create session factory."""
     global SessionFactory
     init_db()
-    _migrate_missing_columns()
+    if config.DATABASE_URL.startswith("sqlite"):
+        _migrate_missing_columns()
     SessionFactory = get_session_factory()
 
 
