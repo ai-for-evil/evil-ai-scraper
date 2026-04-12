@@ -67,6 +67,7 @@ async def api_scrape_url(request: Request):
     if not url:
         return JSONResponse({"error": "URL is required"}, status_code=400)
     user_id = data.get("user_id", "").strip()
+    user_name = data.get("user_name", "").strip()
 
     with get_db() as db:
         run = Run(
@@ -74,6 +75,7 @@ async def api_scrape_url(request: Request):
             input_url=url,
             status="pending",
             user_id=user_id or None,
+            user_name=user_name or None,
         )
         db.add(run)
         db.commit()
@@ -97,6 +99,7 @@ async def api_scrape_sources(request: Request):
         return JSONResponse({"error": "No valid sources selected"}, status_code=400)
 
     user_id = data.get("user_id", "").strip()
+    user_name = data.get("user_name", "").strip()
     max_results = data.get("max_results", 60)
     manifest_fresh = bool(data.get("manifest_fresh", False))
 
@@ -105,6 +108,7 @@ async def api_scrape_sources(request: Request):
             run_type="source",
             status="pending",
             user_id=user_id or None,
+            user_name=user_name or None,
         )
         run.sources_list = valid_sources
         db.add(run)
@@ -141,6 +145,7 @@ async def api_get_runs():
             "rejected_count": r.rejected_count,
             "avg_confidence": r.avg_confidence,
             "user_id": r.user_id,
+            "user_name": r.user_name,
         } for r in runs])
 
 
@@ -294,6 +299,7 @@ async def api_get_leaderboard():
     with get_db() as db:
         results = db.query(
             Run.user_id,
+            func.max(Run.user_name).label('user_name'),
             func.sum(Run.evil_found).label('total_evil_found')
         ).filter(
             Run.status == "completed",
@@ -303,5 +309,6 @@ async def api_get_leaderboard():
 
         return JSONResponse([{
             "user_id": r.user_id,
+            "user_name": r.user_name,
             "total_evil_found": r.total_evil_found,
         } for r in results])

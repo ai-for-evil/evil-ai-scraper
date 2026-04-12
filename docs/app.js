@@ -216,7 +216,10 @@ window.submitUrlScrape = async () => {
     if (!url) return;
     try {
         const body = { url };
-        if (currentUser) body.user_id = currentUser.id;
+        if (currentUser) {
+            body.user_id = currentUser.id;
+            body.user_name = currentUser.user_metadata?.full_name || currentUser.email;
+        }
 
         const res = await fetchApi('/scrape/url', {
             method: 'POST',
@@ -235,7 +238,10 @@ window.submitSourceScrape = async () => {
 
     try {
         const body = { sources, max_results: maxResults };
-        if (currentUser) body.user_id = currentUser.id;
+        if (currentUser) {
+            body.user_id = currentUser.id;
+            body.user_name = currentUser.user_metadata?.full_name || currentUser.email;
+        }
 
         const res = await fetchApi('/scrape/sources', {
             method: 'POST',
@@ -372,7 +378,7 @@ async function renderLeaderboard(container) {
                         <thead>
                             <tr>
                                 <th style="width: 50px;">Rank</th>
-                                <th>Submitter User ID</th>
+                                <th>Contributor</th>
                                 <th style="text-align: right;">Total AI Systems Identified</th>
                             </tr>
                         </thead>
@@ -380,7 +386,12 @@ async function renderLeaderboard(container) {
                             ${board.map((u, i) => `
                                 <tr>
                                     <td><span style="font-size: 1.2rem; font-weight:700; color: ${i === 0 ? '#ffd700' : (i === 1 ? '#c0c0c0' : (i === 2 ? '#cd7f32' : 'inherit'))}">#${i + 1}</span></td>
-                                    <td style="font-family: monospace;">${u.user_id}</td>
+                                    <td style="font-weight: 500;">
+                                        ${u.user_name 
+                                            ? `${u.user_name} <br><span style="font-size: 0.8rem; font-family: monospace; font-weight:normal;" class="text-secondary">${u.user_id}</span>` 
+                                            : `<span style="font-family: monospace;">${u.user_id}</span>`
+                                        }
+                                    </td>
                                     <td style="text-align: right; font-weight:600; color:var(--danger-color); font-size: 1.2rem;">${u.total_evil_found}</td>
                                 </tr>
                             `).join('')}

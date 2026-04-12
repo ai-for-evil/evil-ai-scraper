@@ -30,6 +30,7 @@ class Run(Base):
     avg_confidence = Column(Float, default=0.0)
     error_message = Column(Text, nullable=True)
     user_id = Column(String(128), nullable=True)
+    user_name = Column(String(128), nullable=True)
 
     documents = relationship("Document", back_populates="run", cascade="all, delete-orphan")
     entities = relationship("Entity", back_populates="run", cascade="all, delete-orphan")
