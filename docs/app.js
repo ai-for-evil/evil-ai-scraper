@@ -389,7 +389,7 @@ async function renderLeaderboard(container) {
                                     <td style="font-weight: 500;">
                                         ${u.user_name 
                                             ? `${u.user_name} <br><span style="font-size: 0.8rem; font-family: monospace; font-weight:normal;" class="text-secondary">${u.user_id}</span>` 
-                                            : `<span style="font-family: monospace;">${u.user_id}</span>`
+                                            : `Anonymous Contributor <br><span style="font-size: 0.8rem; font-family: monospace; font-weight:normal;" class="text-secondary">${u.user_id}</span>`
                                         }
                                     </td>
                                     <td style="text-align: right; font-weight:600; color:var(--danger-color); font-size: 1.2rem;">${u.total_evil_found}</td>

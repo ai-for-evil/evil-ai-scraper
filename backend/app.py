@@ -295,17 +295,31 @@ async def api_cancel_run(run_id: int):
 
 @app.get("/api/leaderboard")
 async def api_get_leaderboard():
-    """Return the total evil_found grouped by user_id."""
+    """Return the total unique AI systems found (case-insensitive distinct names) grouped by user_id."""
+    from sqlalchemy import case, distinct, String
     with get_db() as db:
+        system_expr = case(
+            (Classification.ai_system_name == None, func.cast(Classification.document_id, String)),
+            (Classification.ai_system_name == "", func.cast(Classification.document_id, String)),
+            else_=func.lower(func.trim(Classification.ai_system_name))
+        )
+        
         results = db.query(
             Run.user_id,
             func.max(Run.user_name).label('user_name'),
-            func.sum(Run.evil_found).label('total_evil_found')
+            func.count(distinct(system_expr)).label('total_evil_found')
+        ).join(
+            Document, Document.run_id == Run.id
+        ).join(
+            Classification, Classification.document_id == Document.id
         ).filter(
             Run.status == "completed",
             Run.user_id.isnot(None), 
-            Run.user_id != ""
-        ).group_by(Run.user_id).order_by(func.sum(Run.evil_found).desc()).all()
+            Run.user_id != "",
+            Classification.matched == True
+        ).group_by(Run.user_id).order_by(
+            func.count(distinct(system_expr)).desc()
+        ).all()
 
         return JSONResponse([{
             "user_id": r.user_id,
