@@ -87,7 +87,12 @@ function renderAuthUI() {
 
 window.signInWithGoogle = async () => {
     if (!supabase) return alert("Supabase JS is not configured in app.js");
-    await supabase.auth.signInWithOAuth({ provider: 'google' });
+    await supabase.auth.signInWithOAuth({ 
+        provider: 'google',
+        options: {
+            redirectTo: window.location.origin + window.location.pathname
+        }
+    });
 }
 
 window.signOut = async () => {
