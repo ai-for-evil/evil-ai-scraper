@@ -52,3 +52,6 @@ htmlcov/
 
 # Cursor (optional local rules)
 .cursor/
+
+# Deployment
+setup_guide.md
