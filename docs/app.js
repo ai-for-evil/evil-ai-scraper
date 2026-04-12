@@ -32,7 +32,10 @@ const icons = {
 async function fetchApi(endpoint, options = {}) {
     try {
         const res = await fetch(`${API_BASE}${endpoint}`, Object.assign({
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 
+                'Content-Type': 'application/json',
+                'ngrok-skip-browser-warning': 'any'
+            }
         }, options));
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'API Error');
